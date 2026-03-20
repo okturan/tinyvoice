@@ -1,0 +1,56 @@
+/* TinyVoice Theme System — mapped from public/themes.css
+   CSS custom properties consumed by shadcn via index.css */
+
+[data-theme="mocha"] {
+  --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+  --surface0: #313244; --surface1: #45475a; --surface2: #585b70;
+  --text: #cdd6f4; --subtext: #a6adc8; --overlay: #6c7086;
+  --tv-accent: #89b4fa; --green: #a6e3a1; --red: #f38ba8;
+  --yellow: #f9e2af; --blue: #89b4fa; --teal: #94e2d5;
+  --swatch: #89b4fa;
+}
+
+[data-theme="nord"] {
+  --base: #2e3440; --mantle: #272c36; --crust: #21262e;
+  --surface0: #3b4252; --surface1: #434c5e; --surface2: #4c566a;
+  --text: #eceff4; --subtext: #d8dee9; --overlay: #7b88a1;
+  --tv-accent: #88c0d0; --green: #a3be8c; --red: #bf616a;
+  --yellow: #ebcb8b; --blue: #81a1c1; --teal: #8fbcbb;
+  --swatch: #88c0d0;
+}
+
+[data-theme="rosepine"] {
+  --base: #191724; --mantle: #1f1d2e; --crust: #16141f;
+  --surface0: #26233a; --surface1: #2a2837; --surface2: #393552;
+  --text: #e0def4; --subtext: #c4a7e7; --overlay: #6e6a86;
+  --tv-accent: #c4a7e7; --green: #9ccfd8; --red: #eb6f92;
+  --yellow: #f6c177; --blue: #31748f; --teal: #9ccfd8;
+  --swatch: #c4a7e7;
+}
+
+[data-theme="solarized"] {
+  --base: #002b36; --mantle: #00252f; --crust: #001f27;
+  --surface0: #073642; --surface1: #0d4050; --surface2: #1a5668;
+  --text: #fdf6e3; --subtext: #eee8d5; --overlay: #657b83;
+  --tv-accent: #268bd2; --green: #859900; --red: #dc322f;
+  --yellow: #b58900; --blue: #268bd2; --teal: #2aa198;
+  --swatch: #268bd2;
+}
+
+[data-theme="midnight"] {
+  --base: #0f0f14; --mantle: #0a0a0e; --crust: #060608;
+  --surface0: #1a1a22; --surface1: #24242e; --surface2: #2e2e3a;
+  --text: #e4e4ef; --subtext: #b0b0c0; --overlay: #5e5e72;
+  --tv-accent: #7c8af5; --green: #8be28b; --red: #f57c7c;
+  --yellow: #f5d87c; --blue: #7c8af5; --teal: #7cd4d4;
+  --swatch: #7c8af5;
+}
+
+[data-theme="latte"] {
+  --base: #eff1f5; --mantle: #e6e9ef; --crust: #dce0e8;
+  --surface0: #ccd0da; --surface1: #bcc0cc; --surface2: #acb0be;
+  --text: #4c4f69; --subtext: #5c5f77; --overlay: #7c7f93;
+  --tv-accent: #1e66f5; --green: #40a02b; --red: #d20f39;
+  --yellow: #df8e1d; --blue: #1e66f5; --teal: #179299;
+  --swatch: #1e66f5;
+}
