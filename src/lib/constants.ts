@@ -14,11 +14,6 @@ export const RELAY_HTTP =
     ? "http://localhost:8787"
     : "https://tinyvoice-relay.okan.workers.dev";
 
-export const WORKER_WS =
-  location.hostname === "localhost"
-    ? "ws://localhost:8787/ws/"
-    : "wss://tinyvoice-relay.okan.workers.dev/ws/";
-
 export const SUGGESTED_ROOMS = [
   "odin",
   "valhalla",
@@ -26,17 +21,6 @@ export const SUGGESTED_ROOMS = [
   "midgard",
   "asgard",
 ];
-
-export const THEMES = [
-  { id: "mocha", label: "Mocha", swatch: "#89b4fa" },
-  { id: "nord", label: "Nord", swatch: "#5e81ac" },
-  { id: "rosepine", label: "Rose Pine", swatch: "#c4a7e7" },
-  { id: "solarized", label: "Solarized", swatch: "#2aa198" },
-  { id: "midnight", label: "Midnight", swatch: "#1c1c26" },
-  { id: "latte", label: "Latte", swatch: "#dd7878" },
-] as const;
-
-export type ThemeId = (typeof THEMES)[number]["id"];
 
 export const QUALITY_OPTIONS: {
   value: Quality;

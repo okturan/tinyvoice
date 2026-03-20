@@ -1,49 +1,3 @@
-const USER_ADJECTIVES = [
-  "swift",
-  "bold",
-  "quiet",
-  "bright",
-  "dark",
-  "warm",
-  "cool",
-  "wild",
-  "calm",
-  "keen",
-  "brave",
-  "sly",
-  "pale",
-  "deep",
-  "soft",
-  "sharp",
-  "tall",
-  "rare",
-  "fair",
-  "grey",
-] as const;
-
-const USER_NOUNS = [
-  "raven",
-  "wolf",
-  "fox",
-  "hawk",
-  "bear",
-  "lynx",
-  "owl",
-  "deer",
-  "crane",
-  "seal",
-  "wren",
-  "hare",
-  "pike",
-  "moth",
-  "vole",
-  "newt",
-  "toad",
-  "crow",
-  "lark",
-  "shrew",
-] as const;
-
 const ROOM_ADJECTIVES = [
   "hidden",
   "golden",
@@ -92,10 +46,6 @@ const ROOM_NOUNS = [
 
 function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!;
-}
-
-export function randomUsername(): string {
-  return `${pick(USER_ADJECTIVES)}-${pick(USER_NOUNS)}`;
 }
 
 export function randomRoomName(): string {
