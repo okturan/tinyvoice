@@ -64,6 +64,7 @@
             <div class="room-card-meta" id="active-meta">Connecting...</div>
           </div>
         </div>
+        <div class="room-users" id="room-users"></div>
         <button class="room-leave" onclick="toggleConnect()">Leave Room</button>
       </div>
     </div>
@@ -245,6 +246,17 @@ function renderRooms(active) {
 }
 function startRoomPoll() { fetchRooms(); roomPoll = setInterval(fetchRooms, 4000); }
 function stopRoomPoll() { if (roomPoll) { clearInterval(roomPoll); roomPoll = null; } }
+
+function renderUserList(names) {
+  const el = document.getElementById('room-users');
+  el.innerHTML = '';
+  names.forEach(n => {
+    const tag = document.createElement('span');
+    tag.className = 'room-user-tag';
+    tag.textContent = n;
+    el.appendChild(tag);
+  });
+}
 
 function showRoomState(state, roomName) {
   const lobby = document.getElementById('room-lobby');
@@ -469,6 +481,10 @@ function toggleConnect(roomOverride) {
     showRoomState('connected', room);
     document.getElementById('active-meta').textContent = '1 connected';
     addRecent(room);
+    // Send username to server
+    const myName = document.getElementById('username')
+      ? document.getElementById('username').value : 'anon';
+    ws.send(JSON.stringify({ type: 'hello', name: myName }));
     log(`Joined "${room}"`, 'ok');
     updatePTT();
   };
@@ -478,6 +494,7 @@ function toggleConnect(roomOverride) {
       if (msg.type === 'users') {
         document.getElementById('user-count').textContent = msg.count;
         document.getElementById('active-meta').textContent = msg.count + ' connected';
+        renderUserList(msg.names || []);
         log(`${msg.count} user(s) in room`, 'dim');
       }
       return;

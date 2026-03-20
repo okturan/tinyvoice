@@ -267,6 +267,19 @@ select { cursor: pointer; appearance: none; padding-right: 24px;
   font-size: 0.65rem; color: var(--overlay); margin-top: 3px;
 }
 
+.room-users {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-top: 8px;
+}
+.room-user-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  padding: 2px 8px;
+  background: var(--surface0);
+  border-radius: 10px;
+  color: var(--subtext);
+}
+
 .room-leave {
   width: 100%; margin-top: 8px;
   padding: 7px 14px; border-radius: 7px;

@@ -247,6 +247,17 @@ function renderRooms(active) {
 function startRoomPoll() { fetchRooms(); roomPoll = setInterval(fetchRooms, 4000); }
 function stopRoomPoll() { if (roomPoll) { clearInterval(roomPoll); roomPoll = null; } }
 
+function renderUserList(names) {
+  const el = document.getElementById('room-users');
+  el.innerHTML = '';
+  names.forEach(n => {
+    const tag = document.createElement('span');
+    tag.className = 'room-user-tag';
+    tag.textContent = n;
+    el.appendChild(tag);
+  });
+}
+
 function showRoomState(state, roomName) {
   const lobby = document.getElementById('room-lobby');
   const active = document.getElementById('room-active');
@@ -685,6 +696,11 @@ async function pttUp(e) {
     document.getElementById('stat-bytes').className = 'stat-val green';
     totalSent += pk.length;
     updNet();
+
+    // Generate shareable voice link
+    const b64 = btoa(String.fromCharCode(...pk));
+    const playUrl = `${location.origin}/play.html?v=${encodeURIComponent(b64)}`;
+    log(`QR link: ${pk.length}B → ${b64.length} chars`, 'dim');
 
     if (ws && ws.readyState === 1) {
       ws.send(pk.buffer);
