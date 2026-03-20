@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Sheet,
   SheetContent,
@@ -5,9 +6,9 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
+import { Progress } from "@/components/ui/progress";
+import { useThemeContext } from "@/contexts/ThemeContext";
+import { useCodecContext } from "@/contexts/CodecContext";
 import { ModelManagement } from "@/components/codec/ModelManagement";
 
 interface SettingsSheetProps {
@@ -16,36 +17,69 @@ interface SettingsSheetProps {
 }
 
 export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
-  const username =
-    typeof localStorage !== "undefined"
-      ? localStorage.getItem("fc-username") || ""
-      : "";
+  const { theme, setTheme, themes } = useThemeContext();
+  const codec = useCodecContext();
+  const [username, setUsername] = useState(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem("fc-username") || "" : "")
+  );
 
   const handleUsernameChange = (value: string) => {
+    setUsername(value);
     localStorage.setItem("fc-username", value);
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="bg-[var(--mantle)] border-l border-[var(--surface0)] overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="text-[var(--text)]">Settings</SheetTitle>
+      <SheetContent className="bg-[var(--mantle)] border-l border-[var(--surface0)] overflow-y-auto text-[var(--text)]">
+        <SheetHeader className="px-6 pt-6 pb-2">
+          <SheetTitle className="text-[var(--text)] text-base font-semibold">Settings</SheetTitle>
         </SheetHeader>
 
-        <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-col gap-5 px-6 py-4">
           {/* Username */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="username" className="text-[var(--subtext)] text-xs">
+          <div>
+            <label className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold">
               Username
-            </Label>
-            <Input
-              id="username"
-              defaultValue={username}
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => handleUsernameChange(e.target.value)}
               placeholder="your name"
               spellCheck={false}
-              className="bg-[var(--base)] border-[var(--surface0)] text-[var(--text)] font-mono text-sm"
-              onChange={(e) => handleUsernameChange(e.target.value)}
+              className="w-full mt-1.5 px-3 py-2 rounded-md bg-[var(--base)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors"
             />
+          </div>
+
+          <Separator className="bg-[var(--surface0)]" />
+
+          {/* Codec */}
+          <div>
+            <label className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold">
+              Codec
+            </label>
+            <div className="mt-2 flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
+              <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
+            </div>
+            {codec.state === "loading" && (
+              <Progress value={codec.progress} className="mt-2 h-1.5" />
+            )}
+            <div className="flex gap-2 mt-2.5">
+              <button
+                onClick={() => codec.loadModels()}
+                disabled={codec.modelsLoaded || codec.state === "loading"}
+                className="flex-1 py-2 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                {codec.state === "loading" ? "Loading..." : "Load Models"}
+              </button>
+              <button
+                onClick={() => codec.clearModelCache()}
+                className="py-2 px-3 rounded-md text-[0.7rem] text-[var(--overlay)] border border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20 transition-colors cursor-pointer"
+              >
+                Clear
+              </button>
+            </div>
           </div>
 
           <Separator className="bg-[var(--surface0)]" />
@@ -56,9 +90,29 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
           <Separator className="bg-[var(--surface0)]" />
 
           {/* Theme */}
-          <div className="flex flex-col gap-2">
-            <Label className="text-[var(--subtext)] text-xs">Theme</Label>
-            <ThemeSwitcher />
+          <div>
+            <label className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold">
+              Theme
+            </label>
+            <div className="grid grid-cols-3 gap-1.5 mt-2">
+              {themes.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTheme(t.id)}
+                  className={`flex items-center gap-2 px-2.5 py-2 rounded-md transition-colors cursor-pointer ${
+                    theme === t.id
+                      ? "bg-[var(--surface0)] border border-[var(--surface1)]"
+                      : "hover:bg-[var(--surface0)]/50 border border-transparent"
+                  }`}
+                >
+                  <div
+                    className="w-3 h-3 rounded-full flex-shrink-0 ring-1 ring-inset ring-white/10"
+                    style={{ backgroundColor: t.swatch }}
+                  />
+                  <span className="text-[0.65rem] text-[var(--subtext)]">{t.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </SheetContent>
