@@ -9,7 +9,6 @@ export class Lobby {
   constructor(state) {
     this.state = state;
     this.rooms = null; // lazy-loaded from storage
-    this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
   }
 
   async getRooms() {
@@ -22,6 +21,11 @@ export class Lobby {
         }
       }
       this.rooms = stored;
+      // Schedule cleanup alarm only if not already set
+      const existingAlarm = await this.state.storage.getAlarm();
+      if (!existingAlarm) {
+        this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+      }
     }
     return this.rooms;
   }
