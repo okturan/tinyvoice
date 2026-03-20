@@ -246,7 +246,7 @@ export function PTTPage() {
                 {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
                 <button onClick={() => codec.loadModels()} disabled={codec.modelsLoaded || codec.state === "loading"}
                   className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
-                  {codec.state === "loading" ? "Loading..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Load from cache" : "Download Models"}
+                  {codec.state === "loading" ? "Initializing..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Initialize Models" : "Download Models"}
                 </button>
                 <button onClick={() => codec.clearModelCache()}
                   className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">

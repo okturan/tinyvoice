@@ -43,7 +43,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     codec.isCoreModelsCached().then((cached) => {
       if (cached) {
         setModelsCached(true);
-        setStatusText("Cached \u2014 tap Load to initialize");
+        setStatusText("Ready to initialize");
       }
     });
   }, []);

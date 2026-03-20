@@ -6,6 +6,7 @@ import QualityPicker from "./QualityPicker";
 import QRResult from "./QRResult";
 import HexSheet from "./HexSheet";
 import { codec } from "@/lib/codec-service";
+import { isCached } from "@/lib/model-cache";
 import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
@@ -16,10 +17,10 @@ export default function RecordPanel() {
   const [quality, setQuality] = useState<Quality>(Quality.Hz12_5);
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [modelsCached, setModelsCached] = useState(false);
+  const [cacheState, setCacheState] = useState<"unknown" | "all" | "partial" | "none">("unknown");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Load models to start recording");
+  const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState<"" | "ok" | "err">("");
   const [encodeResult, setEncodeResult] = useState<{
     packed: Uint8Array;
@@ -46,15 +47,25 @@ export default function RecordPanel() {
   const recStartRef = useRef(0);
   const workletRegisteredRef = useRef(false);
 
-  // Check if models are cached on mount
+  // Check which models are cached when quality changes
   useEffect(() => {
-    codec.isCoreModelsCached(quality).then((cached) => {
-      if (cached) {
-        setModelsCached(true);
-        setStatus("Cached \u2014 tap to load");
+    if (modelsLoaded) return;
+    Promise.all([
+      isCached("encoder.onnx"),
+      isCached(`compressor_${quality}.onnx`),
+    ]).then(([enc, comp]) => {
+      if (enc && comp) {
+        setCacheState("all");
+        setStatus("Ready to initialize");
+      } else if (enc || comp) {
+        setCacheState("partial");
+        setStatus(enc ? `${quality} compressor needs download` : "Encoder needs download");
+      } else {
+        setCacheState("none");
+        setStatus("");
       }
     });
-  }, [quality]);
+  }, [quality, modelsLoaded]);
 
   // Waveform drawing
   const drawWaveform = useCallback(() => {
@@ -297,7 +308,13 @@ export default function RecordPanel() {
                 onClick={handleLoadModels}
                 disabled={loading}
               >
-                {loading ? "Loading..." : modelsCached ? "Load from cache" : "Download Models"}
+                {loading
+                  ? "Initializing..."
+                  : cacheState === "all"
+                    ? "Initialize Models"
+                    : cacheState === "partial"
+                      ? "Download & Initialize"
+                      : "Download Models"}
               </Button>
               {(loading || progress > 0) && (
                 <Progress value={progress} className="h-1.5" />
