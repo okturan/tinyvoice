@@ -280,7 +280,9 @@ const RELAY_HTTP = location.hostname === 'localhost'
   ? 'http://localhost:8787' : 'https://focalcodec-relay.okan.workers.dev';
 const WORKER_URL = location.hostname === 'localhost'
   ? 'ws://localhost:8787/ws/' : 'wss://focalcodec-relay.okan.workers.dev/ws/';
-const SR = 16000, NFFT = 1024, HOP = 320, WLEN = 1024, PAD = 352;
+// SR, NFFT, HOP, WLEN, PAD, MODEL_BASE, fmt — from shared.js
+// openDB, getCached, setCache, delCache, clearModelCache — from shared.js
+// irfft, istft — from shared.js
 
 // Init room
 const roomInput = document.getElementById('room-name');
@@ -295,56 +297,7 @@ let totalSent = 0, totalRecv = 0;
 let modelsLoaded = false;
 
 /* ══════════════════════════════════════════════════════
-   IndexedDB Model Cache
-   ══════════════════════════════════════════════════════ */
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('focalcodec-models', 1);
-    req.onupgradeneeded = () => req.result.createObjectStore('models');
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-async function getCached(key) {
-  const db = await openDB();
-  return new Promise((resolve) => {
-    const tx = db.transaction('models', 'readonly');
-    const req = tx.objectStore('models').get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => resolve(null);
-  });
-}
-async function setCache(key, data) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('models', 'readwrite');
-    tx.objectStore('models').put(data, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-}
-async function delCache(key) {
-  const db = await openDB();
-  return new Promise((resolve) => {
-    const tx = db.transaction('models', 'readwrite');
-    tx.objectStore('models').delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => resolve();
-  });
-}
-async function clearModelCache() {
-  const db = await openDB();
-  return new Promise((resolve) => {
-    const tx = db.transaction('models', 'readwrite');
-    tx.objectStore('models').clear();
-    tx.oncomplete = () => { log('Cache cleared', 'ok'); resolve(); };
-    tx.onerror = () => resolve();
-  });
-}
-
-/* ══════════════════════════════════════════════════════
-   Utils
+   Utils (app-specific)
    ══════════════════════════════════════════════════════ */
 const logEl = document.getElementById('log');
 function log(m, c='') {
@@ -355,7 +308,6 @@ function log(m, c='') {
   if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
 }
-function fmt(b) { return b < 1024 ? b + ' B' : (b/1024).toFixed(1) + ' KB'; }
 function updNet() {
   document.getElementById('total-sent').textContent = fmt(totalSent);
   document.getElementById('total-recv').textContent = fmt(totalRecv);
@@ -389,57 +341,6 @@ function logHex(data, type) {
   logEl.appendChild(entry);
   if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
-}
-
-/* ══════════════════════════════════════════════════════
-   iSTFT (JS implementation)
-   ══════════════════════════════════════════════════════ */
-function irfft(re, im, n) {
-  const fR = new Float32Array(n), fI = new Float32Array(n);
-  const h = re.length;
-  for (let i = 0; i < h; i++) { fR[i] = re[i]; fI[i] = im[i]; }
-  for (let i = h; i < n; i++) { fR[i] = fR[n-i]; fI[i] = -fI[n-i]; }
-  let j = 0;
-  for (let i = 0; i < n; i++) {
-    if (i < j) { [fR[i],fR[j]] = [fR[j],fR[i]]; [fI[i],fI[j]] = [fI[j],fI[i]]; }
-    let m = n >> 1; while (m >= 1 && j >= m) { j -= m; m >>= 1; } j += m;
-  }
-  for (let s = 2; s <= n; s *= 2) {
-    const hs = s/2, a = 2 * Math.PI / s;
-    for (let i = 0; i < n; i += s)
-      for (let k = 0; k < hs; k++) {
-        const c = Math.cos(a*k), sn = Math.sin(a*k);
-        const tR = c*fR[i+hs+k] - sn*fI[i+hs+k];
-        const tI = sn*fR[i+hs+k] + c*fI[i+hs+k];
-        fR[i+hs+k] = fR[i+k] - tR; fI[i+hs+k] = fI[i+k] - tI;
-        fR[i+k] += tR; fI[i+k] += tI;
-      }
-  }
-  const o = new Float32Array(n);
-  for (let i = 0; i < n; i++) o[i] = fR[i] / n;
-  return o;
-}
-
-function istft(mag, ph) {
-  const hN = NFFT/2+1, T = mag.length / hN;
-  const oS = (T-1) * HOP + WLEN;
-  const o = new Float32Array(oS), wE = new Float32Array(oS);
-  for (let t = 0; t < T; t++) {
-    const off = t * hN;
-    const r = new Float32Array(hN), im = new Float32Array(hN);
-    for (let f = 0; f < hN; f++) {
-      r[f] = mag[off+f] * Math.cos(ph[off+f]);
-      im[f] = mag[off+f] * Math.sin(ph[off+f]);
-    }
-    const fr = irfft(r, im, NFFT);
-    const st = t * HOP;
-    for (let i = 0; i < WLEN; i++) {
-      o[st+i] += fr[i] * istftWin[i];
-      wE[st+i] += istftWin[i] * istftWin[i];
-    }
-  }
-  for (let i = 0; i < oS; i++) if (wE[i] > 1e-8) o[i] /= wE[i];
-  return o.slice(PAD, oS - PAD);
 }
 
 /* ══════════════════════════════════════════════════════
@@ -569,7 +470,7 @@ async function loadModels() {
   if (!modelsLoaded) btn.disabled = false;
 }
 
-const MODEL_BASE = 'https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
+// MODEL_BASE defined in shared.js
 
 async function loadModel(name, onProgress) {
   // Check IndexedDB cache first
@@ -735,7 +636,7 @@ async function decode(data) {
 
     const t0 = performance.now();
     const r = await decSess.run({ tokens: new ort.Tensor('int64', tok, [1, n]) });
-    const au = istft(r.magnitude.data, r.phase.data);
+    const au = istft(r.magnitude.data, r.phase.data, istftWin);
     const t1 = performance.now();
 
     log(`Decoded ${((t1-t0)/1000).toFixed(2)}s -> ${(au.length/SR).toFixed(1)}s`, 'ok');
