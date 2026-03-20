@@ -248,55 +248,57 @@ export function PTTPage() {
               </Card>
             )}
 
-            {/* ── PTT Button ── */}
-            <div className="flex flex-col items-center py-4">
-              <button
-                className={`relative w-[130px] h-[130px] rounded-full border-2 flex flex-col items-center justify-center gap-1 select-none touch-none transition-all duration-200 ${
-                  effectiveState === "disabled"
-                    ? "border-[var(--surface0)] bg-[var(--mantle)] text-[var(--surface2)] opacity-30 cursor-not-allowed"
-                    : effectiveState === "recording"
-                      ? "border-[var(--red)] bg-[var(--red)]/[0.06] text-[var(--red)] ptt-recording cursor-pointer"
-                      : effectiveState === "encoding"
-                        ? "border-[var(--yellow)] bg-[var(--yellow)]/[0.04] text-[var(--yellow)] cursor-wait"
-                        : "border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)] hover:border-[var(--tv-accent)]/40 hover:text-[var(--tv-accent)] cursor-pointer"
-                }`}
-                onPointerDown={e => { e.preventDefault(); if (effectiveState !== "disabled") handleDown(); }}
-                onPointerUp={e => { e.preventDefault(); handleUp(); }}
-                onPointerLeave={e => { e.preventDefault(); handleUp(); }}
-              >
-                {effectiveState === "recording" ? <Square className="w-7 h-7" />
-                  : effectiveState === "encoding" ? <Loader2 className="w-7 h-7 animate-spin" />
-                  : <Mic className="w-7 h-7" />}
-                <span className="text-[0.8rem] font-semibold tracking-widest uppercase">
-                  {effectiveState === "recording" ? "RELEASE" : effectiveState === "encoding" ? "ENCODING" : "HOLD"}
-                </span>
-              </button>
+            {/* ── PTT + Stats ── */}
+            <Card className="border-[var(--surface0)] bg-[var(--mantle)]">
+              <CardContent className="p-4 flex flex-col items-center">
+                <button
+                  className={`relative w-[130px] h-[130px] rounded-full border-2 flex flex-col items-center justify-center gap-1 select-none touch-none transition-all duration-200 ${
+                    effectiveState === "disabled"
+                      ? "border-[var(--surface0)] bg-[var(--base)] text-[var(--surface2)] opacity-30 cursor-not-allowed"
+                      : effectiveState === "recording"
+                        ? "border-[var(--red)] bg-[var(--red)]/[0.06] text-[var(--red)] ptt-recording cursor-pointer"
+                        : effectiveState === "encoding"
+                          ? "border-[var(--yellow)] bg-[var(--yellow)]/[0.04] text-[var(--yellow)] cursor-wait"
+                          : "border-[var(--surface1)] bg-[var(--base)] text-[var(--overlay)] hover:border-[var(--tv-accent)]/40 hover:text-[var(--tv-accent)] cursor-pointer"
+                  }`}
+                  onPointerDown={e => { e.preventDefault(); if (effectiveState !== "disabled") handleDown(); }}
+                  onPointerUp={e => { e.preventDefault(); handleUp(); }}
+                  onPointerLeave={e => { e.preventDefault(); handleUp(); }}
+                >
+                  {effectiveState === "recording" ? <Square className="w-7 h-7" />
+                    : effectiveState === "encoding" ? <Loader2 className="w-7 h-7 animate-spin" />
+                    : <Mic className="w-7 h-7" />}
+                  <span className="text-[0.8rem] font-semibold tracking-widest uppercase">
+                    {effectiveState === "recording" ? "RELEASE" : effectiveState === "encoding" ? "ENCODING" : "HOLD"}
+                  </span>
+                </button>
 
-              {recorder.isRecording && recorder.analyserNode && (
-                <div className="mt-3">
-                  <WaveformCanvas analyserNode={recorder.analyserNode} active={recorder.isRecording} />
+                {recorder.isRecording && recorder.analyserNode && (
+                  <div className="mt-3">
+                    <WaveformCanvas analyserNode={recorder.analyserNode} active={recorder.isRecording} />
+                  </div>
+                )}
+
+                {!recorder.isRecording && (
+                  <p className="text-[0.75rem] text-[var(--overlay)] mt-2">hold to talk &middot; release to send</p>
+                )}
+
+                {/* Stats */}
+                <div className="grid grid-cols-4 gap-1.5 w-full mt-4">
+                  {[
+                    { value: stats.bytesSent, label: "bytes sent", color: stats.bytesSent !== "\u2014" ? "text-[var(--green)]" : "" },
+                    { value: stats.encodeTime, label: "encode", color: "" },
+                    { value: stats.bytesRecv, label: "bytes recv", color: stats.bytesRecv !== "\u2014" ? "text-[var(--teal)]" : "" },
+                    { value: stats.decodeTime, label: "decode", color: "" },
+                  ].map(s => (
+                    <div key={s.label} className="text-center py-2 rounded-lg bg-[var(--base)] border border-[var(--surface0)]">
+                      <div className={`font-mono text-[0.85rem] font-semibold ${s.color || "text-[var(--text)]"}`}>{s.value}</div>
+                      <div className="text-[0.65rem] text-[var(--overlay)] uppercase tracking-wider mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
                 </div>
-              )}
-
-              {!recorder.isRecording && (
-                <p className="text-[0.75rem] text-[var(--overlay)] mt-2">hold to talk &middot; release to send</p>
-              )}
-            </div>
-
-            {/* ── Stats ── */}
-            <div className="grid grid-cols-4 gap-1.5">
-              {[
-                { value: stats.bytesSent, label: "bytes sent", color: stats.bytesSent !== "\u2014" ? "text-[var(--green)]" : "" },
-                { value: stats.encodeTime, label: "encode", color: "" },
-                { value: stats.bytesRecv, label: "bytes recv", color: stats.bytesRecv !== "\u2014" ? "text-[var(--teal)]" : "" },
-                { value: stats.decodeTime, label: "decode", color: "" },
-              ].map(s => (
-                <div key={s.label} className="text-center py-2 rounded-lg bg-[var(--mantle)] border border-[var(--surface0)]">
-                  <div className={`font-mono text-[0.85rem] font-semibold ${s.color || "text-[var(--text)]"}`}>{s.value}</div>
-                  <div className="text-[0.8rem] text-[var(--overlay)] uppercase tracking-wider mt-0.5">{s.label}</div>
-                </div>
-              ))}
-            </div>
+              </CardContent>
+            </Card>
 
             {/* ── Activity Log ── */}
             <Card className="border-[var(--surface0)] bg-[var(--mantle)] flex-1 min-h-[180px] flex flex-col overflow-hidden">
