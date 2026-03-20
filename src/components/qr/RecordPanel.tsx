@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
 import QualityPicker from "./QualityPicker";
 import QRResult from "./QRResult";
-import HexSidebar from "./HexSidebar";
+import HexSheet from "./HexSheet";
 import { loadEncoder, loadCompressor, encode } from "@/lib/codec";
 import { SR, type Quality } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
@@ -14,8 +15,9 @@ export default function RecordPanel() {
   const [quality, setQuality] = useState<Quality>("12_5hz");
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("Load models first");
+  const [status, setStatus] = useState("Load models to start recording");
   const [statusType, setStatusType] = useState<"" | "ok" | "err">("");
   const [encodeResult, setEncodeResult] = useState<{
     packed: Uint8Array;
@@ -23,11 +25,9 @@ export default function RecordPanel() {
     duration: number;
   } | null>(null);
 
-  // Hex sidebar state
+  // Hex sheet state
   const [hexOpen, setHexOpen] = useState(false);
   const [hexData, setHexData] = useState<Uint8Array | null>(null);
-  const [hexAnimating, setHexAnimating] = useState(false);
-  const [hexProgress, setHexProgress] = useState(0);
 
   // Recording refs
   const micRef = useRef<MediaStream | null>(null);
@@ -79,6 +79,7 @@ export default function RecordPanel() {
 
   const handleLoadModels = useCallback(async () => {
     try {
+      setLoading(true);
       setStatus("Requesting microphone...");
       setStatusType("");
       micRef.current = await navigator.mediaDevices.getUserMedia({
@@ -103,6 +104,8 @@ export default function RecordPanel() {
     } catch (e) {
       setStatusType("err");
       setStatus((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, [quality]);
 
@@ -219,22 +222,7 @@ export default function RecordPanel() {
           onStatus: setStatus,
         });
 
-        // Open hex sidebar with animation
         setHexData(result.packed);
-        setHexOpen(true);
-        setHexAnimating(true);
-        setHexProgress(0);
-
-        // Animate hex bytes
-        const steps = 40;
-        for (let i = 0; i <= steps; i++) {
-          setHexProgress(i / steps);
-          await new Promise((r) => setTimeout(r, 25));
-        }
-        await new Promise((r) => setTimeout(r, 200));
-        setHexAnimating(false);
-        setHexProgress(1);
-
         setEncodeResult(result);
         setStatusType("ok");
         setStatus(
@@ -252,9 +240,8 @@ export default function RecordPanel() {
 
   const resetRecord = useCallback(() => {
     setEncodeResult(null);
-    setHexOpen(false);
     setHexData(null);
-    setHexProgress(0);
+    setHexOpen(false);
     setProgress(0);
     setStatusType("ok");
     setStatus("Ready \u2014 hold to record");
@@ -273,21 +260,74 @@ export default function RecordPanel() {
     };
   }, []);
 
-  const buttonIcon =
-    recordState === "encoding" ? "\u231b" : "\ud83c\udf99\ufe0f";
-  const buttonLabel = recordState === "encoding" ? "ENCODING" : "HOLD";
-
   return (
-    <div>
-      <div className="text-center">
+    <div className="flex flex-col gap-4">
+      {/* Quality Picker Card */}
+      <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+        <CardContent className="py-3 px-4">
+          <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
+            Quality
+          </div>
+          <QualityPicker value={quality} onChange={setQuality} />
+        </CardContent>
+      </Card>
+
+      {/* Codec Status Card */}
+      <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+        <CardContent className="py-3 px-4">
+          <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
+            Codec
+          </div>
+          {!modelsLoaded ? (
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                onClick={handleLoadModels}
+                disabled={loading}
+              >
+                {loading ? "Loading..." : "Load Models"}
+              </Button>
+              {(loading || progress > 0) && (
+                <Progress value={progress} className="h-1.5" />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <div className="size-2 rounded-full bg-[var(--green)]" />
+                <span className="text-xs text-[var(--green)]">
+                  Models loaded ({quality})
+                </span>
+              </div>
+              {progress > 0 && progress < 100 && (
+                <Progress value={progress} className="h-1.5" />
+              )}
+            </div>
+          )}
+          <p
+            className={`mt-2 min-h-[1.2em] text-[0.7rem] ${
+              statusType === "ok"
+                ? "text-[var(--green)]"
+                : statusType === "err"
+                  ? "text-[var(--red)]"
+                  : "text-[var(--overlay)]"
+            }`}
+          >
+            {status}
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Record Button */}
+      <div className="flex flex-col items-center py-4">
         <button
-          className={`mx-auto mb-3 flex h-[100px] w-[100px] cursor-pointer select-none flex-col items-center justify-center gap-1 rounded-full border-2 font-sans text-xs font-semibold transition-all ${
+          className={`mb-3 flex h-[100px] w-[100px] cursor-pointer select-none flex-col items-center justify-center gap-1 rounded-full border-2 font-sans text-xs font-semibold transition-all ${
             !modelsLoaded
               ? "cursor-not-allowed border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)] opacity-15"
               : recordState === "recording"
                 ? "border-[var(--red)] bg-[color-mix(in_srgb,var(--red)_8%,var(--base))] text-[var(--red)]"
                 : recordState === "encoding"
-                  ? "border-[var(--yellow)] text-[var(--yellow)]"
+                  ? "animate-pulse border-[var(--yellow)] text-[var(--yellow)]"
                   : "border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)] hover:border-[var(--surface2)] hover:bg-[var(--surface0)] hover:text-[var(--subtext)]"
           }`}
           onPointerDown={recDown}
@@ -295,13 +335,49 @@ export default function RecordPanel() {
           onPointerLeave={recUp}
           disabled={!modelsLoaded}
         >
-          <span className="text-2xl">{buttonIcon}</span>
-          <span>{buttonLabel}</span>
+          {recordState === "encoding" ? (
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            >
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 12 12"
+                  to="360 12 12"
+                  dur="1s"
+                  repeatCount="indefinite"
+                />
+              </path>
+            </svg>
+          ) : (
+            <svg
+              width="28"
+              height="28"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" x2="12" y1="19" y2="22" />
+            </svg>
+          )}
+          <span>{recordState === "encoding" ? "ENCODING" : "HOLD"}</span>
         </button>
 
         {/* Waveform + timer */}
         <div
-          className={`mx-auto mb-2 flex h-8 items-center justify-center gap-2.5 ${
+          className={`flex h-8 items-center justify-center gap-2.5 ${
             recordState === "recording" ? "" : "hidden"
           }`}
         >
@@ -312,58 +388,42 @@ export default function RecordPanel() {
         </div>
 
         {recordState !== "recording" && (
-          <p className="mb-4 text-center text-[0.65rem] text-[var(--overlay)]">
-            hold to record &middot; release to encode
+          <p className="text-[0.65rem] text-[var(--overlay)] opacity-60">
+            hold to record · release to encode
           </p>
+        )}
+
+        {/* Encode progress (only during encode) */}
+        {recordState === "encoding" && (
+          <Progress value={progress} className="mt-2 h-1 w-40" />
         )}
       </div>
 
-      <QualityPicker value={quality} onChange={setQuality} />
-
-      <div className="my-4">
-        <Progress value={progress} className="h-0.5" />
-      </div>
-
-      <p
-        className={`mb-2 min-h-[1.4em] text-center text-xs ${
-          statusType === "ok"
-            ? "text-[var(--green)]"
-            : statusType === "err"
-              ? "text-[var(--red)]"
-              : "text-[var(--overlay)]"
-        }`}
-      >
-        {status}
-      </p>
-
-      {!modelsLoaded && (
-        <Button className="mb-3 w-full" onClick={handleLoadModels}>
-          Load Models
-        </Button>
-      )}
-
+      {/* QR Result Card */}
       {encodeResult && (
-        <div className="mt-4">
-          <QRResult
-            packed={encodeResult.packed}
-            tokenCount={encodeResult.tokenCount}
-            duration={encodeResult.duration}
-            quality={quality}
-          />
-          <div className="mt-3 text-center">
-            <Button variant="outline" size="sm" onClick={resetRecord}>
-              Record another
-            </Button>
-          </div>
-        </div>
+        <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+          <CardContent className="py-4 px-4">
+            <QRResult
+              packed={encodeResult.packed}
+              tokenCount={encodeResult.tokenCount}
+              duration={encodeResult.duration}
+              quality={quality}
+              onHexOpen={() => setHexOpen(true)}
+            />
+            <div className="mt-3 text-center">
+              <Button variant="outline" size="sm" onClick={resetRecord}>
+                Record another
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      <HexSidebar
+      {/* Hex Sheet */}
+      <HexSheet
         data={hexData}
         open={hexOpen}
-        onClose={() => setHexOpen(false)}
-        animating={hexAnimating}
-        animationProgress={hexProgress}
+        onOpenChange={setHexOpen}
       />
     </div>
   );

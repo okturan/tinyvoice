@@ -1,8 +1,10 @@
 import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import HexSheet from "./HexSheet";
 import { decode, estimateDuration, type ParsedTokens } from "@/lib/codec";
 import { SR, type Quality } from "@/lib/constants";
+import { Code } from "lucide-react";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
   { label: "Auto", value: "auto" },
@@ -22,6 +24,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState<"" | "ok" | "err">("");
+  const [hexOpen, setHexOpen] = useState(false);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -30,18 +33,17 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const effectiveQuality = qualityOverride || parsed.quality;
   const estDuration = estimateDuration(parsed.tokenCount, effectiveQuality);
 
-  // Build initial status
   const hasMagic =
-    parsed.tokens.length !== parsed.tokenCount * 2; // simplified check
-  const initialStatus = `${parsed.tokens.length}B, ${parsed.tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${hasMagic ? "" : " (guessed)"} \u2014 tap play`;
+    parsed.tokens.length !== parsed.tokenCount * 2;
+  const initialStatus = `${parsed.tokens.length}B, ${parsed.tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${hasMagic ? "" : " (guessed)"}`;
 
   const handleQualityChange = useCallback(
     (q: string) => {
       const newQ = q === "auto" ? null : (q as Quality);
       setQualityOverride(newQ);
-      audioBufferRef.current = null; // force re-decode
+      audioBufferRef.current = null;
       setStatus(
-        `Decoder set to ${newQ || `auto (${parsed.quality})`} \u2014 tap play`,
+        `Decoder set to ${newQ || `auto (${parsed.quality})`}`,
       );
       setStatusType("");
     },
@@ -49,7 +51,6 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   );
 
   const handlePlay = useCallback(async () => {
-    // Stop if playing
     if (isPlaying && sourceRef.current) {
       try {
         sourceRef.current.stop();
@@ -61,7 +62,6 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       return;
     }
 
-    // Replay from cache
     if (audioBufferRef.current) {
       if (!playCtxRef.current || playCtxRef.current.state === "closed") {
         playCtxRef.current = new AudioContext({ sampleRate: SR });
@@ -82,7 +82,6 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       return;
     }
 
-    // Decode
     setIsLoading(true);
     try {
       const q = effectiveQuality;
@@ -107,7 +106,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       setIsLoading(false);
       setStatusType("ok");
       setStatus(
-        `${(audio.length / SR).toFixed(1)}s decoded from ${parsed.tokens.length} bytes \u2014 click to stop`,
+        `${(audio.length / SR).toFixed(1)}s decoded from ${parsed.tokens.length} bytes`,
       );
       src.onended = () => {
         setIsPlaying(false);
@@ -122,74 +121,73 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   }, [isPlaying, effectiveQuality, parsed]);
 
   return (
-    <div className="mt-4 border-t border-[var(--surface0)] pt-4 text-center">
-      {/* Hex display */}
-      <div className="mx-auto mb-3 max-h-20 overflow-y-auto break-all font-mono text-[0.55rem] leading-relaxed text-[var(--surface2)]">
-        {Array.from(parsed.tokens).map((byte, i) => (
-          <span key={i}>
-            <span className="inline-block w-[1.5em] text-center">
-              {byte.toString(16).padStart(2, "0")}
-            </span>
-            {i < parsed.tokens.length - 1 ? " " : ""}
-          </span>
-        ))}
-      </div>
-
+    <div className="text-center">
       {/* Play button */}
-      <button
-        className={`mx-auto mb-2 inline-flex h-16 w-16 items-center justify-center rounded-full border-2 text-2xl transition-all ${
-          isLoading
-            ? "animate-pulse border-[var(--yellow)] text-[var(--yellow)]"
-            : isPlaying
-              ? "border-[var(--green)] bg-[var(--mantle)] text-[var(--green)] hover:scale-105 hover:bg-[var(--surface0)]"
-              : "border-[var(--tv-accent)] bg-[var(--mantle)] text-[var(--tv-accent)] hover:scale-105 hover:bg-[var(--surface0)]"
-        }`}
-        onClick={handlePlay}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-          >
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
-              <animateTransform
-                attributeName="transform"
-                type="rotate"
-                from="0 12 12"
-                to="360 12 12"
-                dur="1s"
-                repeatCount="indefinite"
-              />
-            </path>
-          </svg>
-        ) : isPlaying ? (
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            stroke="none"
-          >
-            <rect x="4" y="4" width="16" height="16" rx="2" />
-          </svg>
-        ) : (
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            stroke="none"
-          >
-            <polygon points="6,3 20,12 6,21" />
-          </svg>
-        )}
-      </button>
+      <div className="flex items-center justify-center gap-3 mb-3">
+        <button
+          className={`inline-flex h-14 w-14 items-center justify-center rounded-full border-2 text-2xl transition-all ${
+            isLoading
+              ? "animate-pulse border-[var(--yellow)] text-[var(--yellow)]"
+              : isPlaying
+                ? "border-[var(--green)] bg-[var(--mantle)] text-[var(--green)] hover:scale-105 hover:bg-[var(--surface0)]"
+                : "border-[var(--tv-accent)] bg-[var(--mantle)] text-[var(--tv-accent)] hover:scale-105 hover:bg-[var(--surface0)]"
+          }`}
+          onClick={handlePlay}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            >
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 12 12"
+                  to="360 12 12"
+                  dur="1s"
+                  repeatCount="indefinite"
+                />
+              </path>
+            </svg>
+          ) : isPlaying ? (
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+            >
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+            </svg>
+          ) : (
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              stroke="none"
+            >
+              <polygon points="6,3 20,12 6,21" />
+            </svg>
+          )}
+        </button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setHexOpen(true)}
+        >
+          <Code className="size-3" />
+          Hex
+        </Button>
+      </div>
 
       {/* Quality override buttons */}
       <div className="mb-2 flex items-center justify-center gap-1">
@@ -214,10 +212,12 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
         ))}
       </div>
 
-      <Progress value={progress} className="mx-auto mb-2 h-0.5" />
+      {(isLoading || progress > 0) && (
+        <Progress value={progress} className="mx-auto mb-2 h-1" />
+      )}
 
       <p
-        className={`min-h-[1.4em] text-[0.72rem] ${
+        className={`min-h-[1.2em] text-[0.72rem] ${
           statusType === "ok"
             ? "text-[var(--green)]"
             : statusType === "err"
@@ -227,6 +227,13 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       >
         {status || initialStatus}
       </p>
+
+      {/* Hex Sheet */}
+      <HexSheet
+        data={parsed.tokens}
+        open={hexOpen}
+        onOpenChange={setHexOpen}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { useCamera } from "@/hooks/useCamera";
 import { useQRScanner } from "@/hooks/useQRScanner";
+import { Camera, CameraOff } from "lucide-react";
 
 interface CameraScannerProps {
   onQRData: (data: string) => void;
@@ -28,7 +29,7 @@ export default function CameraScanner({ onQRData }: CameraScannerProps) {
   return (
     <div className="text-center">
       {isActive && (
-        <div className="relative mb-2 overflow-hidden rounded-xl bg-[var(--mantle)]">
+        <div className="relative mb-3 overflow-hidden rounded-xl bg-[var(--base)]">
           <video
             ref={videoRef}
             autoPlay
@@ -45,11 +46,21 @@ export default function CameraScanner({ onQRData }: CameraScannerProps) {
         <p className="mb-2 text-[0.7rem] text-[var(--overlay)]">{status}</p>
       )}
       <Button
-        variant="secondary"
+        variant={isActive ? "destructive" : "secondary"}
+        size="sm"
         onClick={toggle}
-        className={isActive ? "border-[var(--red)] text-[var(--red)]" : ""}
       >
-        {isActive ? "Stop" : "Start Camera"}
+        {isActive ? (
+          <>
+            <CameraOff className="size-3.5" />
+            Stop Camera
+          </>
+        ) : (
+          <>
+            <Camera className="size-3.5" />
+            Start Camera
+          </>
+        )}
       </Button>
     </div>
   );
