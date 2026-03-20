@@ -56,20 +56,30 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .new-btn { display:inline-block; margin-top:12px; padding:7px 14px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; transition:all 0.1s; }
 .new-btn:hover { background:var(--surface0); color:var(--text); }
 
-/* ── Hex + QR split ──────────────── */
-.qr-split {
-  display: grid; grid-template-columns: 1fr auto; gap: 12px;
-  align-items: start; margin-bottom: 12px;
+/* ── QR result layout ────────────── */
+.qr-center {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; margin-bottom: 14px;
 }
-.qr-right { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.qr-right img { border-radius: 6px; background: white; padding: 6px; }
+.qr-center img { border-radius: 8px; background: white; padding: 8px; }
+
+.preview-btn {
+  padding: 6px 20px; border: 1px solid var(--surface0);
+  background: var(--surface0); color: var(--subtext);
+  border-radius: 20px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.72rem;
+  font-weight: 500; transition: all 0.12s;
+}
+.preview-btn:hover { background: var(--surface1); color: var(--text); }
+.preview-btn.playing { border-color: var(--green); color: var(--green); }
+.preview-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .hex-stream {
   background: var(--mantle); border-radius: 8px; padding: 10px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.58rem;
-  line-height: 1.7; word-break: break-all; max-height: 160px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
+  line-height: 1.6; word-break: break-all; max-height: 70px;
   overflow-y: auto; text-align: left;
-  color: var(--surface2);
+  color: var(--surface2); margin-bottom: 10px;
 }
 .hex-stream .b {
   display: inline-block; width: 1.5em; text-align: center;
@@ -148,17 +158,16 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="rec-status" id="rec-status">Load models first</div>
     <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
-      <div class="qr-split">
-        <div class="hex-stream" id="hex-stream"></div>
-        <div class="qr-right">
-          <img id="qr-img" width="160" height="160" alt="QR code" style="display:none">
-          <div class="qr-meta">
-            <span><b id="qr-bytes">0</b> B</span>
-            <span><b id="qr-tokens">0</b> tok</span>
-            <span><b id="qr-dur">0</b>s</span>
-          </div>
+      <div class="qr-center">
+        <img id="qr-img" width="180" height="180" alt="QR code" style="display:none">
+        <div class="qr-meta">
+          <span><b id="qr-bytes">0</b> B</span>
+          <span><b id="qr-tokens">0</b> tok</span>
+          <span><b id="qr-dur">0</b>s</span>
         </div>
+        <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
       </div>
+      <div class="hex-stream" id="hex-stream"></div>
       <div class="qr-url-row">
         <input class="qr-url" id="qr-url" readonly onclick="this.select()">
         <button class="copy-btn" onclick="copyUrl()">Copy</button>
@@ -421,6 +430,9 @@ async function recUp(e) {
       document.getElementById('dl-link').href = cv.toDataURL('image/png');
     };
 
+    // Store for preview playback
+    window._previewTokens = pk;
+
     st.className = 'rec-status ok';
     st.textContent = `${dur}s → ${pk.length} bytes → QR ready`;
   } catch (e) {
@@ -596,6 +608,59 @@ async function decodeAndPlay() {
     st.className='dec-status err';st.textContent=e.message;
     btn.className='play-btn';btn.innerHTML='&#9654;';btn.disabled=false;
   }
+}
+
+// === PREVIEW ENCODED AUDIO ===
+async function previewEncoded() {
+  const pk = window._previewTokens;
+  if (!pk) return;
+  const btn = document.getElementById('preview-btn');
+  const st = document.getElementById('rec-status');
+
+  // Need decoder to preview
+  if (!decSess) {
+    btn.disabled = true;
+    btn.textContent = 'Loading decoder...';
+    try {
+      if (!istftWin) {
+        const wr = await fetch(MODEL_BASE + 'istft_window.json');
+        istftWin = new Float32Array(await wr.json());
+      }
+      const mb = await dlModel('decoder_12_5hz.onnx', () => {}, st);
+      decSess = await ort.InferenceSession.create(mb, {executionProviders:['wasm']});
+    } catch(e) {
+      st.className = 'rec-status err'; st.textContent = e.message;
+      btn.disabled = false; btn.textContent = '\u25B6 Preview'; return;
+    }
+  }
+
+  btn.textContent = 'Decoding...';
+  try {
+    const nTokens = pk.length / 2;
+    const tokens = new BigInt64Array(nTokens);
+    const dv = new DataView(pk.buffer, pk.byteOffset, pk.byteLength);
+    for (let i = 0; i < nTokens; i++) tokens[i] = BigInt(dv.getUint16(i*2, true));
+
+    const result = await decSess.run({tokens: new ort.Tensor('int64', tokens, [1, nTokens])});
+    const audio = istft(result.magnitude.data, result.phase.data);
+
+    if (!playCtx || playCtx.state === 'closed') playCtx = new AudioContext({sampleRate: SR});
+    if (playCtx.state === 'suspended') await playCtx.resume();
+    const buf = playCtx.createBuffer(1, audio.length, SR);
+    buf.getChannelData(0).set(audio);
+    const src = playCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(playCtx.destination);
+
+    btn.className = 'preview-btn playing';
+    btn.textContent = '\u25A0 Playing...';
+    src.onended = () => { btn.className = 'preview-btn'; btn.textContent = '\u25B6 Preview'; };
+    src.start();
+  } catch(e) {
+    st.className = 'rec-status err'; st.textContent = e.message;
+    btn.textContent = '\u25B6 Preview';
+  }
+  btn.disabled = false;
 }
 
 // === AUTO-DECODE FROM URL ===
