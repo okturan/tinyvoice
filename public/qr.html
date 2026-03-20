@@ -161,6 +161,11 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .play-btn.loading { border-color:var(--yellow); color:var(--yellow); animation:pulse 1.2s ease infinite; }
 .play-btn.playing { border-color:var(--green); color:var(--green); }
 .play-btn:disabled { opacity:0.3; cursor:not-allowed; }
+.dec-quality-switch { display:flex; align-items:center; gap:4px; margin:8px 0; justify-content:center; }
+.dec-q-label { font-size:0.6rem; color:var(--overlay); margin-right:4px; }
+.dec-q-btn { padding:3px 8px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:4px; cursor:pointer; font-size:0.6rem; font-family:'Inter',sans-serif; transition:all 0.1s; }
+.dec-q-btn:hover { background:var(--surface0); color:var(--text); }
+.dec-q-btn.active { background:var(--surface0); color:var(--text); font-weight:600; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
 .dec-status { font-size:0.72rem; color:var(--overlay); min-height:1.4em; }
 .dec-status.ok { color:var(--green); }
@@ -269,6 +274,13 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 
     <div class="dec-player" id="dec-player">
       <button class="play-btn" id="play-btn" onclick="decodeAndPlay()">&#9654;</button>
+      <div class="dec-quality-switch">
+        <span class="dec-q-label">Decoder:</span>
+        <button class="dec-q-btn active" data-q="auto" onclick="setDecQuality('auto')">Auto</button>
+        <button class="dec-q-btn" data-q="12_5hz" onclick="setDecQuality('12_5hz')">12.5hz</button>
+        <button class="dec-q-btn" data-q="25hz" onclick="setDecQuality('25hz')">25hz</button>
+        <button class="dec-q-btn" data-q="50hz" onclick="setDecQuality('50hz')">50hz</button>
+      </div>
       <div class="dec-prog"><div class="dec-prog-fill" id="dec-prog"></div></div>
       <div class="dec-status" id="dec-status"></div>
     </div>
@@ -522,9 +534,13 @@ async function recUp(e) {
     const tok = r.tokens.data;
     prog.style.width = '100%';
 
-    const pk = new Uint8Array(tok.length * 2);
+    // Pack: 1-byte magic header + token data
+    // Magic: 0x01=50hz, 0x02=25hz, 0x03=12.5hz
+    const MAGIC = { '50hz': 0x01, '25hz': 0x02, '12_5hz': 0x03 };
+    const pk = new Uint8Array(1 + tok.length * 2);
+    pk[0] = MAGIC[currentQuality] || 0x03;
     const dv = new DataView(pk.buffer);
-    for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
+    for (let i = 0; i < tok.length; i++) dv.setUint16(1 + i*2, Number(tok[i]), true);
 
     // Show result
     document.getElementById('qr-result').style.display = 'block';
@@ -675,19 +691,43 @@ function stopCam() {
 // === DECODE: PLAYER ===
 let decData=null, decNTokens=0, audioBuffer=null;
 
-function guessQuality(nTokens) {
-  // Heuristic: 12.5hz ≈ 12.5 tok/s, 25hz ≈ 25, 50hz ≈ 50
-  // For a 5s clip: 12.5hz=63, 25hz=125, 50hz=250
-  // Use ratio: if tokens < 80 probably 12.5hz, < 160 probably 25hz, else 50hz
-  if (nTokens <= 100) return '12_5hz';
-  if (nTokens <= 200) return '25hz';
-  return '50hz';
+const MAGIC_TO_QUALITY = { 0x01: '50hz', 0x02: '25hz', 0x03: '12_5hz' };
+let decQualityOverride = null; // null = auto
+
+function setDecQuality(q) {
+  decQualityOverride = q === 'auto' ? null : q;
+  audioBuffer = null; // force re-decode
+  document.querySelectorAll('.dec-q-btn').forEach(b => b.classList.toggle('active', b.dataset.q === q));
+  const active = decQualityOverride || window._decQuality || '12_5hz';
+  setDecStatus(`Decoder set to ${decQualityOverride || 'auto (' + (window._decQuality||'?') + ')'} — tap play`);
+}
+const QUALITY_RATES = { '50hz': 50, '25hz': 25, '12_5hz': 12.5 };
+
+function parseTokenData(data) {
+  // Check for magic byte header
+  if (data.length >= 3 && data[0] >= 0x01 && data[0] <= 0x03 && (data.length - 1) % 2 === 0) {
+    return {
+      quality: MAGIC_TO_QUALITY[data[0]],
+      tokens: data.slice(1),
+    };
+  }
+  // Legacy: no header, guess from token count (old links)
+  if (data.length >= 4 && data.length % 2 === 0) {
+    const nTok = data.length / 2;
+    const quality = nTok <= 100 ? '12_5hz' : nTok <= 200 ? '25hz' : '50hz';
+    return { quality, tokens: data };
+  }
+  return null;
 }
 
 function showDecPlayer(data) {
-  if (data.length<4||data.length%2!==0) { setDecStatus('Invalid data','err'); return; }
-  decData=data; decNTokens=data.length/2; audioBuffer=null;
-  window._decQuality = guessQuality(decNTokens);
+  const parsed = parseTokenData(data);
+  if (!parsed) { setDecStatus('Invalid voice data', 'err'); return; }
+
+  decData = parsed.tokens;
+  decNTokens = parsed.tokens.length / 2;
+  audioBuffer = null;
+  window._decQuality = parsed.quality;
 
   // Build hex display
   const player = document.getElementById('dec-player');
@@ -701,18 +741,19 @@ function showDecPlayer(data) {
   }
   hexEl.innerHTML = '';
   window._decHexSpans = [];
-  for (let i = 0; i < data.length; i++) {
+  for (let i = 0; i < parsed.tokens.length; i++) {
     const span = document.createElement('span');
     span.className = 'b';
-    span.textContent = data[i].toString(16).padStart(2, '0');
+    span.textContent = parsed.tokens[i].toString(16).padStart(2, '0');
     hexEl.appendChild(span);
     if (i < data.length - 1) hexEl.appendChild(document.createTextNode(' '));
     window._decHexSpans.push(span);
   }
 
   const gq = window._decQuality;
-  const estRate = gq === '12_5hz' ? 12.5 : gq === '25hz' ? 25 : 50;
-  setDecStatus(`${data.length}B, ${decNTokens} tok, ~${(decNTokens/estRate).toFixed(1)}s (${gq}) — tap play`);
+  const estRate = QUALITY_RATES[gq] || 12.5;
+  const hasMagic = data.length >= 3 && data[0] >= 0x01 && data[0] <= 0x03;
+  setDecStatus(`${parsed.tokens.length}B, ${decNTokens} tok, ~${(decNTokens/estRate).toFixed(1)}s · ${gq}${hasMagic ? '' : ' (guessed)'} — tap play`);
 }
 
 async function decodeAndPlay() {
@@ -732,7 +773,7 @@ async function decodeAndPlay() {
     st.textContent='Loading iSTFT...';prog.style.width='5%';
     const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
 
-    const dq = window._decQuality || '12_5hz';
+    const dq = decQualityOverride || window._decQuality || '12_5hz';
     await loadDecoder(dq, st, prog, 5, 80);
 
     // Animate hex bytes lighting up during decode
@@ -750,7 +791,7 @@ async function decodeAndPlay() {
     const dv=new DataView(decData.buffer,decData.byteOffset,decData.byteLength);
     for(let i=0;i<decNTokens;i++) tokens[i]=BigInt(dv.getUint16(i*2,true));
 
-    const dq2 = window._decQuality || '12_5hz';
+    const dq2 = decQualityOverride || window._decQuality || '12_5hz';
     const result=await decSessions[dq2].run({tokens:new ort.Tensor('int64',tokens,[1,decNTokens])});
     const audio=istft(result.magnitude.data,result.phase.data);
     prog.style.width='100%';

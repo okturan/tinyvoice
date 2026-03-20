@@ -682,10 +682,11 @@ async function pttUp(e) {
     log(`Encoded ${encTime}s -> ${tok.length} tokens`, 'ok');
     document.getElementById('stat-encode').textContent = encTime + 's';
 
-    // Pack as 16-bit LE
-    const pk = new Uint8Array(tok.length * 2);
+    // Pack: magic byte (0x01=50hz) + 16-bit LE tokens
+    const pk = new Uint8Array(1 + tok.length * 2);
+    pk[0] = 0x01; // 50hz
     const dv = new DataView(pk.buffer);
-    for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
+    for (let i = 0; i < tok.length; i++) dv.setUint16(1 + i*2, Number(tok[i]), true);
 
     document.getElementById('stat-bytes').textContent = fmt(pk.length);
     document.getElementById('stat-bytes').className = 'stat-val green';
@@ -722,9 +723,14 @@ async function decode(data) {
   logHex(data, 'recv');
 
   try {
-    const n = data.length / 2;
+    // Check for magic byte header
+    let tokenData = data;
+    if (data.length >= 3 && data[0] >= 0x01 && data[0] <= 0x03 && (data.length - 1) % 2 === 0) {
+      tokenData = data.slice(1);
+    }
+    const n = tokenData.length / 2;
     const tok = new BigInt64Array(n);
-    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const dv = new DataView(tokenData.buffer, tokenData.byteOffset, tokenData.byteLength);
     for (let i = 0; i < n; i++) tok[i] = BigInt(dv.getUint16(i*2, true));
 
     const t0 = performance.now();
