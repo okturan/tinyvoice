@@ -186,11 +186,12 @@ export function PTTPage() {
             ) : (
               <Card className="border-[var(--surface0)] bg-[var(--mantle)]">
                 <CardContent className="p-3 px-4">
-                  <div className="text-[0.55rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-2">Room</div>
-                  <div className="flex gap-1.5 mb-2">
+                  {/* Join input */}
+                  <div className="text-[0.55rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-2">Join a room</div>
+                  <div className="flex gap-1.5 mb-3">
                     <div className="flex-1 flex rounded-md overflow-hidden border border-[var(--surface0)] bg-[var(--crust)] focus-within:border-[var(--surface1)] transition-colors">
                       <input
-                        type="text" spellCheck={false} autoComplete="off" placeholder="room name"
+                        type="text" spellCheck={false} autoComplete="off" placeholder="enter any room name"
                         value={roomInput} onChange={e => setRoomInput(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && handleJoin()}
                         className="flex-1 min-w-0 px-2.5 py-2 bg-transparent text-[var(--text)] font-mono text-[0.8rem] outline-none placeholder:text-[var(--surface2)]"
@@ -205,26 +206,43 @@ export function PTTPage() {
                     <button
                       onClick={() => setRoomInput(randomRoomName())}
                       className="px-2.5 rounded-md border border-[var(--surface0)] text-[var(--overlay)] hover:text-[var(--tv-accent)] hover:border-[var(--tv-accent)]/30 transition-colors cursor-pointer"
+                      title="Generate random name"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {(room.activeRooms.length > 0
-                      ? room.activeRooms
-                      : SUGGESTED_ROOMS.map(n => ({ name: n, count: 0 }))
-                    ).map(r => {
-                      const name = typeof r === "string" ? r : r.name;
-                      const count = typeof r === "string" ? 0 : r.count;
-                      return (
+
+                  {/* Active rooms from lobby */}
+                  {room.activeRooms.length > 0 && (
+                    <div className="mb-3">
+                      <div className="text-[0.5rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Active now</div>
+                      <div className="flex flex-wrap gap-1">
+                        {room.activeRooms.map(r => (
+                          <button key={r.name} onClick={() => handleJoin(r.name)}
+                            className="group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer transition-colors hover:bg-[var(--surface0)] border border-transparent hover:border-[var(--surface0)]"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] flex-shrink-0" />
+                            <span className="font-mono text-[0.68rem] text-[var(--text)]">{r.name}</span>
+                            <span className="text-[0.5rem] text-[var(--green)] font-mono">{r.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick join suggestions */}
+                  <div>
+                    <div className="text-[0.5rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Quick join</div>
+                    <div className="flex flex-wrap gap-1">
+                      {SUGGESTED_ROOMS.map(name => (
                         <button key={name} onClick={() => handleJoin(name)}
-                          className="group flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors hover:bg-[var(--surface0)]"
+                          className="group px-2.5 py-1 rounded-md cursor-pointer transition-colors hover:bg-[var(--surface0)] border border-[var(--surface0)]/50 hover:border-[var(--surface0)]"
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
-                          <span className="font-mono text-[0.68rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{name}</span>
+                          <span className="font-mono text-[0.65rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{name}</span>
                         </button>
-                      );
-                    })}
+                      ))}
+                    </div>
+                    <p className="text-[0.5rem] text-[var(--surface2)] mt-1.5">Rooms are created on join. Anyone with the same name is connected.</p>
                   </div>
                 </CardContent>
               </Card>
