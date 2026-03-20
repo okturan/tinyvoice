@@ -149,7 +149,43 @@ select { cursor: pointer; appearance: none; padding-right: 24px;
 /* ── Room Panel ─────────────────────────────────────── */
 .room-sec { position: relative; }
 
-#room-lobby input {
+.room-input-wrap {
+  display: flex; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--surface0); background: var(--crust);
+  transition: border-color 0.2s; margin-bottom: 6px;
+}
+.room-input-wrap:focus-within { border-color: var(--surface1); }
+.room-input-wrap input {
+  flex: 1; border: none; border-radius: 0;
+  background: transparent; min-width: 0;
+  padding: 8px 10px; color: var(--text);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+}
+.room-input-wrap input:focus { outline: none; border-color: transparent; }
+
+.room-go {
+  width: 40px; border: none; background: var(--surface0);
+  color: var(--overlay); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.room-go:hover { background: var(--accent); color: var(--crust); }
+.room-go:active { transform: scale(0.92); }
+
+.room-shuffle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; margin-bottom: 6px;
+  background: none; border: 1px solid transparent;
+  color: var(--overlay); font-size: 0.62rem;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer; border-radius: 4px; transition: all 0.15s;
+}
+.room-shuffle:hover {
+  color: var(--accent); border-color: var(--surface0);
+}
+
+/* room-lobby standalone input (only when not inside room-input-wrap) */
+#room-lobby > input {
   width: 100%; margin-bottom: 6px;
 }
 
