@@ -51,7 +51,7 @@ export default function Dropzone({ onTokenData, onError }: DropzoneProps) {
   return (
     <>
       <div
-        className={`mb-3 cursor-pointer rounded-xl border-2 border-dashed px-4 py-7 text-center transition-all ${
+        className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-6 text-center transition-all ${
           dragOver
             ? "border-[var(--tv-accent)] bg-[color-mix(in_srgb,var(--tv-accent)_5%,var(--base))]"
             : "border-[var(--surface1)] hover:border-[var(--tv-accent)] hover:bg-[color-mix(in_srgb,var(--tv-accent)_5%,var(--base))]"
@@ -71,10 +71,10 @@ export default function Dropzone({ onTokenData, onError }: DropzoneProps) {
       >
         <FolderOpen className="mx-auto mb-1.5 h-7 w-7 text-[var(--overlay)]" />
         <div className="text-[0.78rem] text-[var(--subtext)]">
-          Drop a file or QR screenshot
+          Drop QR image, .bin, or raw bytes
         </div>
         <div className="mt-1 text-[0.62rem] text-[var(--overlay)]">
-          raw token bytes, QR image, or .bin file
+          click to browse files
         </div>
       </div>
       <input

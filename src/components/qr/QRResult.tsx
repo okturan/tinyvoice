@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { decode } from "@/lib/codec";
 import { SR, type Quality } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
+import { Copy, Download, Play, Square, Code } from "lucide-react";
 
 interface QRResultProps {
   packed: Uint8Array;
   tokenCount: number;
   duration: number;
   quality: Quality;
+  onHexOpen?: () => void;
 }
 
 export default function QRResult({
@@ -18,6 +19,7 @@ export default function QRResult({
   tokenCount,
   duration,
   quality,
+  onHexOpen,
 }: QRResultProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -63,7 +65,6 @@ export default function QRResult({
 
     setPreviewStatus("Decoding...");
     try {
-      // Token data is packed with magic byte at index 0 -- skip it for decode
       const tokens = packed.slice(1);
       const audio = await decode(tokens, tokenCount, quality, {
         onProgress: () => {},
@@ -96,7 +97,7 @@ export default function QRResult({
   }, [packed, quality, tokenCount, playing]);
 
   return (
-    <div className="flex flex-col items-center gap-2.5">
+    <div className="flex flex-col items-center gap-3">
       {qrDataUrl && (
         <img
           src={qrDataUrl}
@@ -107,6 +108,7 @@ export default function QRResult({
         />
       )}
 
+      {/* Metadata */}
       <div className="flex gap-4 font-mono text-[0.68rem] text-[var(--overlay)]">
         <span>
           <b className="font-semibold text-[var(--text)]">{packed.length}</b>{" "}
@@ -124,69 +126,48 @@ export default function QRResult({
         </span>
       </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        className={`rounded-full px-5 ${playing ? "border-[var(--green)] text-[var(--green)]" : ""}`}
-        onClick={preview}
-      >
-        {playing ? (
-          <>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              stroke="none"
-              className="mr-1"
-            >
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-            </svg>
-            Playing...
-          </>
-        ) : (
-          <>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              stroke="none"
-              className="mr-1"
-            >
-              <polygon points="6,3 20,12 6,21" />
-            </svg>
-            Preview
-          </>
+      {/* Action buttons */}
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className={`rounded-full ${playing ? "border-[var(--green)] text-[var(--green)]" : ""}`}
+          onClick={preview}
+        >
+          {playing ? (
+            <>
+              <Square className="size-3 fill-current" />
+              Playing...
+            </>
+          ) : (
+            <>
+              <Play className="size-3 fill-current" />
+              Preview
+            </>
+          )}
+        </Button>
+
+        <Button variant="outline" size="sm" onClick={copyUrl}>
+          <Copy className="size-3" />
+          {copied ? "Copied!" : "Copy URL"}
+        </Button>
+
+        <Button variant="outline" size="sm" onClick={downloadQR}>
+          <Download className="size-3" />
+          Download
+        </Button>
+
+        {onHexOpen && (
+          <Button variant="outline" size="sm" onClick={onHexOpen}>
+            <Code className="size-3" />
+            Hex
+          </Button>
         )}
-      </Button>
+      </div>
 
       {previewStatus && (
         <p className="text-xs text-[var(--overlay)]">{previewStatus}</p>
       )}
-
-      <div className="flex w-full gap-1">
-        <Input
-          readOnly
-          value={playUrl}
-          onClick={(e) => (e.target as HTMLInputElement).select()}
-          className="min-w-0 flex-1 bg-[var(--mantle)] font-mono text-[0.6rem] text-[var(--subtext)]"
-        />
-        <Button variant="secondary" size="sm" onClick={copyUrl}>
-          {copied ? "Copied!" : "Copy"}
-        </Button>
-      </div>
-
-      <div className="flex w-full gap-1.5">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="flex-1"
-          onClick={downloadQR}
-        >
-          Download QR
-        </Button>
-      </div>
     </div>
   );
 }

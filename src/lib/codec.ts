@@ -5,7 +5,7 @@ import {
   QUALITY_TO_MAGIC,
   QUALITY_RATES,
 } from "./constants";
-import { loadModel } from "./modelCache";
+import { loadModel } from "./model-cache";
 import { istft } from "./istft";
 
 type OrtSession = Awaited<

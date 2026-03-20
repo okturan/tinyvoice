@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import Dropzone from "./Dropzone";
 import CameraScanner from "./CameraScanner";
 import DecodePlayer from "./DecodePlayer";
@@ -45,20 +46,42 @@ export default function DecodePanel({ initialData }: DecodePanelProps) {
   }, []);
 
   return (
-    <div>
-      <Dropzone onTokenData={handleTokenData} onError={handleError} />
+    <div className="flex flex-col gap-4">
+      {/* Dropzone Card */}
+      <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+        <CardContent className="py-4 px-4">
+          <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
+            Drop or Upload
+          </div>
+          <Dropzone onTokenData={handleTokenData} onError={handleError} />
+        </CardContent>
+      </Card>
 
-      <div className="my-3 text-center text-[0.65rem] text-[var(--surface2)]">
-        &mdash; or scan with camera &mdash;
-      </div>
-
-      <CameraScanner onQRData={handleQRData} />
+      {/* Camera Scanner Card */}
+      <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+        <CardContent className="py-4 px-4">
+          <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
+            Camera Scanner
+          </div>
+          <CameraScanner onQRData={handleQRData} />
+        </CardContent>
+      </Card>
 
       {error && (
-        <p className="mt-3 text-center text-xs text-[var(--red)]">{error}</p>
+        <p className="text-center text-xs text-[var(--red)]">{error}</p>
       )}
 
-      {parsed && <DecodePlayer parsed={parsed} />}
+      {/* Player Card */}
+      {parsed && (
+        <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
+          <CardContent className="py-4 px-4">
+            <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
+              Player
+            </div>
+            <DecodePlayer parsed={parsed} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
