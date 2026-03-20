@@ -291,7 +291,7 @@ export default function RecordPanel() {
           <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
             Quality
           </div>
-          <QualityPicker value={quality} onChange={setQuality} />
+          <QualityPicker value={quality} onChange={setQuality} refreshKey={modelsLoaded ? 1 : 0} />
         </CardContent>
       </Card>
 

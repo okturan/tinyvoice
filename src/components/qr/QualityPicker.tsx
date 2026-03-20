@@ -7,9 +7,11 @@ import { useEffect, useState } from "react";
 interface QualityPickerProps {
   value: Quality;
   onChange: (quality: Quality) => void;
+  /** Bump to trigger a cache re-check (e.g. after model download) */
+  refreshKey?: number;
 }
 
-export default function QualityPicker({ value, onChange }: QualityPickerProps) {
+export default function QualityPicker({ value, onChange, refreshKey = 0 }: QualityPickerProps) {
   const [cacheState, setCacheState] = useState<
     Record<Quality, boolean | undefined>
   >({
@@ -27,7 +29,7 @@ export default function QualityPicker({ value, onChange }: QualityPickerProps) {
       setCacheState(results as Record<Quality, boolean>);
     }
     checkCaches();
-  }, []);
+  }, [refreshKey]);
 
   return (
     <RadioGroup
