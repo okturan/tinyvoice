@@ -689,7 +689,7 @@ function stopCam() {
 }
 
 // === DECODE: PLAYER ===
-let decData=null, decNTokens=0, audioBuffer=null;
+let decData=null, decNTokens=0, audioBuffer=null, currentSource=null, isPlaying=false;
 
 const MAGIC_TO_QUALITY = { 0x01: '50hz', 0x02: '25hz', 0x03: '12_5hz' };
 let decQualityOverride = null; // null = auto
@@ -759,12 +759,23 @@ function showDecPlayer(data) {
 async function decodeAndPlay() {
   const btn=document.getElementById('play-btn'), st=document.getElementById('dec-status'), prog=document.getElementById('dec-prog');
 
+  // Stop if currently playing
+  if (isPlaying && currentSource) {
+    try { currentSource.stop(); } catch(e) {}
+    currentSource = null;
+    isPlaying = false;
+    btn.className='play-btn';btn.innerHTML='&#9654;';
+    return;
+  }
+
+  // Replay from cached buffer
   if (audioBuffer) {
     if(!playCtx||playCtx.state==='closed') playCtx=new AudioContext({sampleRate:SR});
     if(playCtx.state==='suspended') await playCtx.resume();
     const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
-    btn.className='play-btn playing';btn.innerHTML='&#9646;&#9646;';
-    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';};
+    currentSource=src; isPlaying=true;
+    btn.className='play-btn playing';btn.innerHTML='&#9632;';
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';isPlaying=false;currentSource=null;};
     src.start(); return;
   }
 
@@ -804,9 +815,10 @@ async function decodeAndPlay() {
     audioBuffer.getChannelData(0).set(audio);
 
     const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
-    btn.className='play-btn playing';btn.innerHTML='&#9646;&#9646;';btn.disabled=false;
-    st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s decoded from ${decData.length} bytes`;
-    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';};
+    currentSource=src; isPlaying=true;
+    btn.className='play-btn playing';btn.innerHTML='&#9632;';btn.disabled=false;
+    st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s decoded from ${decData.length} bytes — click to stop`;
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';isPlaying=false;currentSource=null;};
     src.start();
   } catch(e) {
     st.className='dec-status err';st.textContent=e.message;
