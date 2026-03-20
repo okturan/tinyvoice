@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Mic, Square, Loader2, QrCode, Settings } from "lucide-react";
+import { Mic, Square, Loader2, Settings } from "lucide-react";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
 import { useRoom } from "@/contexts/RoomContext";
@@ -9,7 +9,6 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -162,7 +161,10 @@ export function PTTPage() {
           {/* ── Header ── */}
           <header className="flex items-center h-11 px-4 bg-[var(--mantle)] border-b border-[var(--surface0)] flex-shrink-0">
             <span className="text-sm font-bold">TinyVoice</span>
-            <Badge variant="secondary" className="ml-2 text-[0.55rem] bg-[var(--surface0)] text-[var(--overlay)] border-0">PTT</Badge>
+            <nav className="flex gap-0.5 ml-3">
+              <span className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold bg-[var(--surface0)] text-[var(--text)]">PTT</span>
+              <Link to="/qr" className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold text-[var(--overlay)] hover:text-[var(--subtext)] hover:bg-[var(--surface0)]/50 transition-colors no-underline">QR</Link>
+            </nav>
             <div className="flex-1" />
             <div className="flex items-center gap-3 text-[0.7rem] font-mono text-[var(--overlay)]">
               <span>sent <span className="text-[var(--text)]">{stats.totalSent > 0 ? fmt(stats.totalSent) : "0 B"}</span></span>
@@ -281,10 +283,6 @@ export function PTTPage() {
                     <div className="px-6 py-4"><ModelManagement /></div>
                   </SheetContent>
                 </Sheet>
-                <Separator className="bg-[var(--surface0)] mb-2" />
-                <Link to="/qr" className="flex items-center gap-2 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--text)] transition-colors no-underline">
-                  <QrCode className="w-3.5 h-3.5" /> Voice QR
-                </Link>
               </div>
             </div>
 
