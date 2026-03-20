@@ -27,7 +27,7 @@ export function StatsStrip() {
   const { bytesSent, encodeTime, bytesRecv, decodeTime } = useStats();
 
   return (
-    <div className="absolute bottom-2.5 left-3 right-3 flex gap-1.5">
+    <div className="flex gap-1.5">
       <Stat
         value={bytesSent}
         label="bytes sent"
