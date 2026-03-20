@@ -375,6 +375,20 @@ select { cursor: pointer; appearance: none; padding-right: 24px;
 .ptt-btn .icon { font-size: 1.8rem; }
 .ptt-hint { font-size: 0.65rem; color: var(--overlay); opacity: 0.4; margin-top: 8px; }
 
+/* Recording info */
+.rec-info {
+  display: none; align-items: center; gap: 10px;
+  margin-top: 10px; height: 32px;
+}
+.rec-info.active { display: flex; }
+.waveform { width: 160px; height: 32px; border-radius: 6px; }
+.rec-timer {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--red); min-width: 3em;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Stats strip */
 .stat-row {
   position: absolute; bottom: 10px; left: 12px; right: 12px;

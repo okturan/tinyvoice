@@ -34,6 +34,10 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .rec-btn.disabled { opacity:0.15; cursor:not-allowed; }
 .rec-btn .icon { font-size:1.6rem; }
 .rec-hint { text-align:center; font-size:0.65rem; color:var(--overlay); margin-bottom:16px; }
+.rec-info { display:none; align-items:center; justify-content:center; gap:10px; margin:8px 0; height:32px; }
+.rec-info.active { display:flex; }
+.waveform { width:160px; height:32px; border-radius:6px; }
+.rec-timer { font-family:'JetBrains Mono',monospace; font-size:0.85rem; font-weight:600; color:var(--red); min-width:3em; font-variant-numeric:tabular-nums; }
 .rec-status { text-align:center; font-size:0.75rem; color:var(--overlay); min-height:1.4em; margin-bottom:8px; }
 .rec-status.ok { color:var(--green); }
 .rec-status.err { color:var(--red); }
@@ -200,7 +204,11 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
         <span class="icon">🎙</span>
         <span>HOLD</span>
       </button>
-      <div class="rec-hint">hold to record &middot; release to encode</div>
+      <div class="rec-info" id="qr-rec-info">
+        <canvas class="waveform" id="qr-waveform" width="200" height="32"></canvas>
+        <span class="rec-timer" id="qr-rec-timer"></span>
+      </div>
+      <div class="rec-hint" id="qr-rec-hint">hold to record &middot; release to encode</div>
     </div>
     <div class="quality-picker">
       <label class="quality-opt">
@@ -473,7 +481,55 @@ async function loadEncoder() {
 }
 
 // === RECORD ===
-let sp = null;
+let sp = null, qrAnalyser = null, qrRecStart = 0, qrTimerIv = null, qrWaveRaf = null;
+
+function startQrRecVisuals() {
+  const info = document.getElementById('qr-rec-info');
+  const timer = document.getElementById('qr-rec-timer');
+  const hint = document.getElementById('qr-rec-hint');
+  info.classList.add('active');
+  hint.style.display = 'none';
+  qrRecStart = Date.now();
+  timer.textContent = '0.0s';
+  qrTimerIv = setInterval(() => {
+    timer.textContent = ((Date.now() - qrRecStart) / 1000).toFixed(1) + 's';
+  }, 100);
+
+  const canvas = document.getElementById('qr-waveform');
+  const ctx = canvas.getContext('2d');
+  qrAnalyser = actx.createAnalyser();
+  qrAnalyser.fftSize = 256;
+  const bufLen = qrAnalyser.frequencyBinCount;
+  const dataArr = new Uint8Array(bufLen);
+  function draw() {
+    if (!isRec) return;
+    qrWaveRaf = requestAnimationFrame(draw);
+    qrAnalyser.getByteTimeDomainData(dataArr);
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#f38ba8';
+    ctx.beginPath();
+    const sliceW = w / bufLen;
+    let x = 0;
+    for (let i = 0; i < bufLen; i++) {
+      const v = dataArr[i] / 128.0;
+      const y = v * h / 2;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      x += sliceW;
+    }
+    ctx.stroke();
+  }
+  draw();
+}
+
+function stopQrRecVisuals() {
+  if (qrTimerIv) { clearInterval(qrTimerIv); qrTimerIv = null; }
+  if (qrWaveRaf) { cancelAnimationFrame(qrWaveRaf); qrWaveRaf = null; }
+  document.getElementById('qr-rec-info').classList.remove('active');
+  document.getElementById('qr-rec-hint').style.display = '';
+}
+
 function recDown(e) {
   e.preventDefault();
   if (!encSess || isRec) return;
@@ -483,16 +539,20 @@ function recDown(e) {
   document.getElementById('rec-status').textContent = 'Recording...';
   document.getElementById('rec-status').className = 'rec-status';
 
-  const src = actx.createMediaStreamSource(mic);
+  const mediaSource = actx.createMediaStreamSource(mic);
   sp = actx.createScriptProcessor(4096,1,1);
   sp.onaudioprocess = ev => { if(isRec) recChunks.push(new Float32Array(ev.inputBuffer.getChannelData(0))); };
-  src.connect(sp); sp.connect(actx.destination);
+  mediaSource.connect(sp); sp.connect(actx.destination);
+
+  startQrRecVisuals();
+  mediaSource.connect(qrAnalyser);
 }
 
 async function recUp(e) {
   if (e) e.preventDefault();
   if (!isRec) return;
   isRec = false;
+  stopQrRecVisuals();
   if (sp) { sp.disconnect(); sp = null; }
 
   const btn = document.getElementById('rec-btn');

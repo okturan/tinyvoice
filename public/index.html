@@ -89,10 +89,14 @@
     <div class="ptt">
       <button class="ptt-btn disabled" id="ptt-btn"
         onpointerdown="pttDown(event)" onpointerup="pttUp(event)" onpointerleave="pttUp(event)">
-        <span class="icon">🎙</span>
-        <span>HOLD</span>
+        <span class="icon" id="ptt-icon">🎙</span>
+        <span id="ptt-label">HOLD</span>
       </button>
-      <div class="ptt-hint">hold to talk &middot; release to send</div>
+      <div class="rec-info" id="rec-info">
+        <canvas class="waveform" id="waveform" width="200" height="32"></canvas>
+        <span class="rec-timer" id="rec-timer"></span>
+      </div>
+      <div class="ptt-hint" id="ptt-hint">hold to talk &middot; release to send</div>
       <div class="stat-row">
         <div class="stat"><div class="stat-val" id="stat-bytes">&mdash;</div><div class="stat-lbl">bytes sent</div></div>
         <div class="stat"><div class="stat-val" id="stat-encode">&mdash;</div><div class="stat-lbl">encode</div></div>
@@ -530,7 +534,58 @@ function updatePTT() {
   document.getElementById('ptt-btn').classList.toggle('disabled', !ready);
 }
 
-let sp = null;
+let sp = null, analyser = null, recStartTime = 0, recTimerIv = null, waveRaf = null;
+
+function startRecVisuals() {
+  const info = document.getElementById('rec-info');
+  const timer = document.getElementById('rec-timer');
+  const hint = document.getElementById('ptt-hint');
+  info.classList.add('active');
+  hint.style.display = 'none';
+  recStartTime = Date.now();
+  timer.textContent = '0.0s';
+  recTimerIv = setInterval(() => {
+    timer.textContent = ((Date.now() - recStartTime) / 1000).toFixed(1) + 's';
+  }, 100);
+
+  // Waveform
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 256;
+  const bufLen = analyser.frequencyBinCount;
+  const dataArr = new Uint8Array(bufLen);
+
+  function drawWave() {
+    if (!isRec) return;
+    waveRaf = requestAnimationFrame(drawWave);
+    analyser.getByteTimeDomainData(dataArr);
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 1.5;
+    const style = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = style.getPropertyValue('--red').trim() || '#f38ba8';
+    ctx.beginPath();
+    const sliceW = w / bufLen;
+    let x = 0;
+    for (let i = 0; i < bufLen; i++) {
+      const v = dataArr[i] / 128.0;
+      const y = v * h / 2;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      x += sliceW;
+    }
+    ctx.stroke();
+  }
+  drawWave();
+}
+
+function stopRecVisuals() {
+  if (recTimerIv) { clearInterval(recTimerIv); recTimerIv = null; }
+  if (waveRaf) { cancelAnimationFrame(waveRaf); waveRaf = null; }
+  document.getElementById('rec-info').classList.remove('active');
+  document.getElementById('ptt-hint').style.display = '';
+}
+
 function pttDown(e) {
   e.preventDefault();
   const b = document.getElementById('ptt-btn');
@@ -538,13 +593,18 @@ function pttDown(e) {
   isRec = true; chunks = [];
   b.classList.add('recording');
 
-  const src = actx.createMediaStreamSource(mic);
+  const mediaSource = actx.createMediaStreamSource(mic);
   sp = actx.createScriptProcessor(4096, 1, 1);
   sp.onaudioprocess = (ev) => {
     if (isRec) chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
   };
-  src.connect(sp);
+  mediaSource.connect(sp);
   sp.connect(actx.destination);
+
+  // Connect analyser for waveform
+  startRecVisuals();
+  mediaSource.connect(analyser);
+
   log('Recording...', 'warn');
 }
 
@@ -552,16 +612,23 @@ async function pttUp(e) {
   if (e) e.preventDefault();
   if (!isRec) return;
   isRec = false;
+  stopRecVisuals();
 
   const b = document.getElementById('ptt-btn');
   b.classList.remove('recording');
   b.classList.add('sending');
+  document.getElementById('ptt-icon').textContent = '⏳';
+  document.getElementById('ptt-label').textContent = 'ENCODING';
+  await new Promise(r => setTimeout(r, 50)); // let UI update
+
   if (sp) { sp.disconnect(); sp = null; }
 
   const tl = chunks.reduce((s, c) => s + c.length, 0);
   if (tl < SR * 0.15) {
     log('Too short, skipped', 'dim');
     b.classList.remove('sending');
+    document.getElementById('ptt-icon').textContent = '🎙';
+    document.getElementById('ptt-label').textContent = 'HOLD';
     return;
   }
   const audio = new Float32Array(tl);
@@ -610,6 +677,8 @@ async function pttUp(e) {
     console.error(e);
   }
   b.classList.remove('sending');
+  document.getElementById('ptt-icon').textContent = '🎙';
+  document.getElementById('ptt-label').textContent = 'HOLD';
 }
 
 /* ══════════════════════════════════════════════════════
