@@ -30,7 +30,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="bg-[var(--mantle)] border-l border-[var(--surface0)] overflow-y-auto text-[var(--text)]">
+      <SheetContent onOpenAutoFocus={e => e.preventDefault()} className="bg-[var(--mantle)] border-l border-[var(--surface0)] overflow-y-auto text-[var(--text)]">
         <SheetHeader className="px-6 pt-6 pb-2">
           <SheetTitle className="text-[var(--text)] text-base font-semibold">Settings</SheetTitle>
         </SheetHeader>
