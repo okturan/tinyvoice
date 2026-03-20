@@ -230,7 +230,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
           <span><b id="qr-tokens">0</b> tokens</span>
           <span><b id="qr-dur">0</b>s</span>
         </div>
-        <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
+        <button class="preview-btn" id="preview-btn" onclick="previewEncoded()"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-right:4px"><polygon points="6,3 20,12 6,21"/></svg> Preview</button>
         <div class="qr-url-row">
           <input class="qr-url" id="qr-url" readonly onclick="this.select()">
           <button class="copy-btn" onclick="copyUrl()">Copy</button>
@@ -273,7 +273,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     </div>
 
     <div class="dec-player" id="dec-player">
-      <button class="play-btn" id="play-btn" onclick="decodeAndPlay()">&#9654;</button>
+      <button class="play-btn" id="play-btn" onclick="decodeAndPlay()"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21"/></svg></button>
       <div class="dec-quality-switch">
         <span class="dec-q-label">Decoder:</span>
         <button class="dec-q-btn active" data-q="auto" onclick="setDecQuality('auto')">Auto</button>
@@ -290,6 +290,12 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+<script>
+// SVG icons — centered, consistent across browsers
+const ICON_PLAY = '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6,3 20,12 6,21"/></svg>';
+const ICON_STOP = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>';
+const ICON_LOADING = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg>';
+</script>
 <script>
 const SR=16000, NFFT=1024, HOP=320, WLEN=1024, PAD=352;
 const MODEL_BASE='https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
@@ -764,7 +770,7 @@ async function decodeAndPlay() {
     try { currentSource.stop(); } catch(e) {}
     currentSource = null;
     isPlaying = false;
-    btn.className='play-btn';btn.innerHTML='&#9654;';
+    btn.className='play-btn';btn.innerHTML=ICON_PLAY;
     return;
   }
 
@@ -774,12 +780,12 @@ async function decodeAndPlay() {
     if(playCtx.state==='suspended') await playCtx.resume();
     const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
     currentSource=src; isPlaying=true;
-    btn.className='play-btn playing';btn.innerHTML='&#9632;';
-    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';isPlaying=false;currentSource=null;};
+    btn.className='play-btn playing';btn.innerHTML=ICON_STOP;
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML=ICON_PLAY;isPlaying=false;currentSource=null;};
     src.start(); return;
   }
 
-  btn.disabled=true;btn.className='play-btn loading';btn.innerHTML='&#8987;';
+  btn.disabled=true;btn.className='play-btn loading';btn.innerHTML=ICON_LOADING;
   try {
     st.textContent='Loading iSTFT...';prog.style.width='5%';
     const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
@@ -816,13 +822,13 @@ async function decodeAndPlay() {
 
     const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
     currentSource=src; isPlaying=true;
-    btn.className='play-btn playing';btn.innerHTML='&#9632;';btn.disabled=false;
+    btn.className='play-btn playing';btn.innerHTML=ICON_STOP;btn.disabled=false;
     st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s decoded from ${decData.length} bytes — click to stop`;
-    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';isPlaying=false;currentSource=null;};
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML=ICON_PLAY;isPlaying=false;currentSource=null;};
     src.start();
   } catch(e) {
     st.className='dec-status err';st.textContent=e.message;
-    btn.className='play-btn';btn.innerHTML='&#9654;';btn.disabled=false;
+    btn.className='play-btn';btn.innerHTML=ICON_PLAY;btn.disabled=false;
   }
 }
 
@@ -846,7 +852,7 @@ async function previewEncoded() {
       await loadDecoder(q, st, null, 0, 100);
     } catch(e) {
       st.className = 'rec-status err'; st.textContent = e.message;
-      btn.disabled = false; btn.textContent = '\u25B6 Preview'; return;
+      btn.disabled = false; btn.innerHTML = ICON_PLAY.replace('24','12').replace('24','12') + ' Preview'; return;
     }
   }
 
@@ -869,12 +875,12 @@ async function previewEncoded() {
     src.connect(playCtx.destination);
 
     btn.className = 'preview-btn playing';
-    btn.textContent = '\u25A0 Playing...';
-    src.onended = () => { btn.className = 'preview-btn'; btn.textContent = '\u25B6 Preview'; };
+    btn.innerHTML = ICON_STOP.replace('20','12').replace('20','12') + ' Playing...';
+    src.onended = () => { btn.className = 'preview-btn'; btn.innerHTML = ICON_PLAY.replace('24','12').replace('24','12') + ' Preview'; };
     src.start();
   } catch(e) {
     st.className = 'rec-status err'; st.textContent = e.message;
-    btn.textContent = '\u25B6 Preview';
+    btn.innerHTML = ICON_PLAY.replace('24','12').replace('24','12') + ' Preview';
   }
   btn.disabled = false;
 }
