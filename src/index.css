@@ -1,6 +1,275 @@
 @import "tailwindcss";
 
+/*
+ * Theme System — 6 palettes
+ *
+ * Each theme defines:
+ *   1. shadcn standard variables (--background, --foreground, etc.)
+ *   2. TinyVoice extended variables (--base, --mantle, --tv-accent, etc.)
+ *
+ * --accent is renamed to --tv-accent to avoid collision with shadcn's --accent.
+ * The original theme accent color maps to shadcn --primary.
+ */
+
 @theme inline {
-  --font-sans: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  /* ── Catppuccin Mocha (default) ──────────────────────── */
+  :root,
+  [data-theme="mocha"] {
+    /* shadcn standard */
+    --background: #1e1e2e;
+    --foreground: #cdd6f4;
+    --card: #181825;
+    --card-foreground: #cdd6f4;
+    --popover: #181825;
+    --popover-foreground: #cdd6f4;
+    --primary: #89b4fa;
+    --primary-foreground: #11111b;
+    --secondary: #313244;
+    --secondary-foreground: #a6adc8;
+    --muted: #313244;
+    --muted-foreground: #6c7086;
+    --accent: #45475a;
+    --accent-foreground: #cdd6f4;
+    --destructive: #f38ba8;
+    --border: #313244;
+    --input: #313244;
+    --ring: #89b4fa;
+
+    /* TinyVoice extended */
+    --base: #1e1e2e;
+    --mantle: #181825;
+    --crust: #11111b;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --text: #cdd6f4;
+    --subtext: #a6adc8;
+    --overlay: #6c7086;
+    --tv-accent: #89b4fa;
+    --green: #a6e3a1;
+    --red: #f38ba8;
+    --yellow: #f9e2af;
+    --blue: #89b4fa;
+    --teal: #94e2d5;
+    --swatch: #89b4fa;
+
+    --radius: 0.5rem;
+  }
+
+  /* ── Nord ──────────────────────────────────────────────── */
+  [data-theme="nord"] {
+    --background: #2e3440;
+    --foreground: #eceff4;
+    --card: #272c36;
+    --card-foreground: #eceff4;
+    --popover: #272c36;
+    --popover-foreground: #eceff4;
+    --primary: #88c0d0;
+    --primary-foreground: #21262e;
+    --secondary: #3b4252;
+    --secondary-foreground: #d8dee9;
+    --muted: #3b4252;
+    --muted-foreground: #81899b;
+    --accent: #434c5e;
+    --accent-foreground: #eceff4;
+    --destructive: #bf616a;
+    --border: #3b4252;
+    --input: #3b4252;
+    --ring: #88c0d0;
+
+    --base: #2e3440;
+    --mantle: #272c36;
+    --crust: #21262e;
+    --surface0: #3b4252;
+    --surface1: #434c5e;
+    --surface2: #4c566a;
+    --text: #eceff4;
+    --subtext: #d8dee9;
+    --overlay: #81899b;
+    --tv-accent: #88c0d0;
+    --green: #a3be8c;
+    --red: #bf616a;
+    --yellow: #ebcb8b;
+    --blue: #81a1c1;
+    --teal: #8fbcbb;
+    --swatch: #5e81ac;
+  }
+
+  /* ── Rose Pine ─────────────────────────────────────────── */
+  [data-theme="rosepine"] {
+    --background: #191724;
+    --foreground: #e0def4;
+    --card: #1f1d2e;
+    --card-foreground: #e0def4;
+    --popover: #1f1d2e;
+    --popover-foreground: #e0def4;
+    --primary: #c4a7e7;
+    --primary-foreground: #16141f;
+    --secondary: #26233a;
+    --secondary-foreground: #908caa;
+    --muted: #26233a;
+    --muted-foreground: #706d87;
+    --accent: #302d41;
+    --accent-foreground: #e0def4;
+    --destructive: #eb6f92;
+    --border: #26233a;
+    --input: #26233a;
+    --ring: #c4a7e7;
+
+    --base: #191724;
+    --mantle: #1f1d2e;
+    --crust: #16141f;
+    --surface0: #26233a;
+    --surface1: #302d41;
+    --surface2: #3e3a54;
+    --text: #e0def4;
+    --subtext: #908caa;
+    --overlay: #706d87;
+    --tv-accent: #c4a7e7;
+    --green: #9ccfd8;
+    --red: #eb6f92;
+    --yellow: #f6c177;
+    --blue: #7fafcf;
+    --teal: #9ccfd8;
+    --swatch: #c4a7e7;
+  }
+
+  /* ── Solarized Dark ────────────────────────────────────── */
+  [data-theme="solarized"] {
+    --background: #002b36;
+    --foreground: #fdf6e3;
+    --card: #00212b;
+    --card-foreground: #fdf6e3;
+    --popover: #00212b;
+    --popover-foreground: #fdf6e3;
+    --primary: #268bd2;
+    --primary-foreground: #001920;
+    --secondary: #073642;
+    --secondary-foreground: #eee8d5;
+    --muted: #073642;
+    --muted-foreground: #93a1a1;
+    --accent: #1a4a56;
+    --accent-foreground: #fdf6e3;
+    --destructive: #dc322f;
+    --border: #073642;
+    --input: #073642;
+    --ring: #268bd2;
+
+    --base: #002b36;
+    --mantle: #00212b;
+    --crust: #001920;
+    --surface0: #073642;
+    --surface1: #1a4a56;
+    --surface2: #2a6070;
+    --text: #fdf6e3;
+    --subtext: #eee8d5;
+    --overlay: #93a1a1;
+    --tv-accent: #268bd2;
+    --green: #2aa198;
+    --red: #dc322f;
+    --yellow: #b58900;
+    --blue: #268bd2;
+    --teal: #2aa198;
+    --swatch: #2aa198;
+  }
+
+  /* ── Catppuccin Latte (light) ──────────────────────────── */
+  [data-theme="latte"] {
+    --background: #eff1f5;
+    --foreground: #4c4f69;
+    --card: #e6e9ef;
+    --card-foreground: #4c4f69;
+    --popover: #e6e9ef;
+    --popover-foreground: #4c4f69;
+    --primary: #1e66f5;
+    --primary-foreground: #dce0e8;
+    --secondary: #ccd0da;
+    --secondary-foreground: #5c5f77;
+    --muted: #ccd0da;
+    --muted-foreground: #7c7f93;
+    --accent: #bcc0cc;
+    --accent-foreground: #4c4f69;
+    --destructive: #d20f39;
+    --border: #ccd0da;
+    --input: #ccd0da;
+    --ring: #1e66f5;
+
+    --base: #eff1f5;
+    --mantle: #e6e9ef;
+    --crust: #dce0e8;
+    --surface0: #ccd0da;
+    --surface1: #bcc0cc;
+    --surface2: #acb0be;
+    --text: #4c4f69;
+    --subtext: #5c5f77;
+    --overlay: #7c7f93;
+    --tv-accent: #1e66f5;
+    --green: #40a02b;
+    --red: #d20f39;
+    --yellow: #df8e1d;
+    --blue: #1e66f5;
+    --teal: #179299;
+    --swatch: #dd7878;
+  }
+
+  /* ── Midnight ──────────────────────────────────────────── */
+  [data-theme="midnight"] {
+    --background: #121218;
+    --foreground: #d4d4e0;
+    --card: #0e0e14;
+    --card-foreground: #d4d4e0;
+    --popover: #0e0e14;
+    --popover-foreground: #d4d4e0;
+    --primary: #6ea0d4;
+    --primary-foreground: #0a0a0f;
+    --secondary: #1c1c26;
+    --secondary-foreground: #9898aa;
+    --muted: #1c1c26;
+    --muted-foreground: #5e5e70;
+    --accent: #262632;
+    --accent-foreground: #d4d4e0;
+    --destructive: #e06c7a;
+    --border: #1c1c26;
+    --input: #1c1c26;
+    --ring: #6ea0d4;
+
+    --base: #121218;
+    --mantle: #0e0e14;
+    --crust: #0a0a0f;
+    --surface0: #1c1c26;
+    --surface1: #262632;
+    --surface2: #32323e;
+    --text: #d4d4e0;
+    --subtext: #9898aa;
+    --overlay: #5e5e70;
+    --tv-accent: #6ea0d4;
+    --green: #7ec89e;
+    --red: #e06c7a;
+    --yellow: #d4b06a;
+    --blue: #6ea0d4;
+    --teal: #6ec4b8;
+    --swatch: #1c1c26;
+  }
 }
