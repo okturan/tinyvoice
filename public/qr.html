@@ -56,6 +56,24 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .new-btn { display:inline-block; margin-top:12px; padding:7px 14px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; transition:all 0.1s; }
 .new-btn:hover { background:var(--surface0); color:var(--text); }
 
+/* ── Hex stream ──────────────────── */
+.hex-stream {
+  background: var(--mantle); border-radius: 8px; padding: 10px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.58rem;
+  line-height: 1.7; word-break: break-all; max-height: 80px;
+  overflow-y: auto; margin-bottom: 12px; text-align: left;
+  color: var(--surface2);
+}
+.hex-stream .b {
+  display: inline-block; width: 1.5em; text-align: center;
+  transition: color 0.1s, text-shadow 0.1s;
+}
+.hex-stream .b.lit {
+  color: var(--green);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
+}
+.hex-stream .b.done { color: var(--overlay); }
+
 /* ── Decode panel ──────────────────── */
 .dropzone { border:2px dashed var(--surface1); border-radius:12px; padding:28px 16px; cursor:pointer; transition:all 0.15s; text-align:center; margin-bottom:12px; }
 .dropzone:hover,.dropzone.dragover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 5%,var(--base)); }
@@ -123,7 +141,8 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="rec-status" id="rec-status">Load models first</div>
     <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
-      <img id="qr-img" width="200" height="200" alt="QR code">
+      <div class="hex-stream" id="hex-stream"></div>
+      <img id="qr-img" width="200" height="200" alt="QR code" style="display:none">
       <div class="qr-meta">
         <span><b id="qr-bytes">0</b> bytes</span>
         <span><b id="qr-tokens">0</b> tokens</span>
@@ -340,6 +359,36 @@ async function recUp(e) {
     const dv = new DataView(pk.buffer);
     for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
 
+    // Show result area with hex stream
+    document.getElementById('qr-result').style.display = 'block';
+
+    // Build hex display
+    const hexEl = document.getElementById('hex-stream');
+    hexEl.innerHTML = '';
+    const hexChars = [];
+    for (let i = 0; i < pk.length; i++) {
+      const span = document.createElement('span');
+      span.className = 'b';
+      span.textContent = pk[i].toString(16).padStart(2, '0');
+      hexEl.appendChild(span);
+      if (i < pk.length - 1) hexEl.appendChild(document.createTextNode(' '));
+      hexChars.push(span);
+    }
+
+    // Animate bytes lighting up
+    st.textContent = 'Packing tokens...';
+    const step = Math.max(1, Math.floor(pk.length / 40));
+    for (let i = 0; i < hexChars.length; i += step) {
+      for (let j = i; j < Math.min(i + step, hexChars.length); j++) {
+        hexChars[j].classList.add('lit');
+      }
+      hexEl.scrollTop = hexEl.scrollHeight;
+      await new Promise(r => setTimeout(r, 25));
+    }
+    // Fade to done
+    await new Promise(r => setTimeout(r, 200));
+    hexChars.forEach(s => { s.classList.remove('lit'); s.classList.add('done'); });
+
     const b64 = btoa(String.fromCharCode(...pk));
     const playUrl = `${location.origin}/qr.html?v=${encodeURIComponent(b64)}`;
 
@@ -348,11 +397,11 @@ async function recUp(e) {
     document.getElementById('qr-tokens').textContent = tok.length;
     document.getElementById('qr-dur').textContent = dur;
     document.getElementById('qr-url').value = playUrl;
-    document.getElementById('qr-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(playUrl);
 
-    // Download QR as PNG
     const qrImg = document.getElementById('qr-img');
+    qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(playUrl);
     qrImg.crossOrigin = 'anonymous';
+    qrImg.style.display = 'block';
     qrImg.onload = () => {
       const cv = document.createElement('canvas');
       cv.width = qrImg.naturalWidth; cv.height = qrImg.naturalHeight;
@@ -360,7 +409,6 @@ async function recUp(e) {
       document.getElementById('dl-link').href = cv.toDataURL('image/png');
     };
 
-    document.getElementById('qr-result').style.display = 'block';
     st.className = 'rec-status ok';
     st.textContent = `${dur}s → ${pk.length} bytes → QR ready`;
   } catch (e) {
