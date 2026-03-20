@@ -102,11 +102,23 @@ cd worker && wrangler dev --port 8787   # Worker dev server
 - **Two model cache modules existed** — `modelCache.ts` was deleted and imports redirected to `model-cache.ts`, but `codec.ts` still has its own `loadModel` adapter function wrapping `model-cache.ts`.
 - **PTTPage still has some inline logic** that should move into contexts/hooks.
 
+### Dead files to delete during refactor
+- `src/lib/rooms.ts` — unused, zero imports
+- `src/lib/utils/names.ts` — unused duplicate of `src/lib/names.ts`
+- `src/lib/config.ts` — unused, relay URLs are in `constants.ts`
+- `src/hooks/useCodec.ts` — unused re-export stub
+- `src/hooks/useModels.ts` — unused re-export stub
+- `src/components/qr/HexSidebar.tsx` — replaced by `HexSheet.tsx`
+- `src/components/shared/UsernameInput.tsx` — unused, username is in PTTPage sidebar
+- `public/index.html` — old vanilla PTT (not used by React build)
+- `public/qr.html` — old vanilla QR page
+- `public/app.css` — old vanilla styles
+- `public/themes.css` — old vanilla themes (now in src/index.css)
+- `public/shared.js` — old vanilla shared utils (now in src/lib/)
+
 ### Other
 - Float16 ONNX models failed ORT validation — only float32 works
 - Encoder ONNX export requires legacy tracer (dynamo=False) due to WavLM attention layer
-- Old vanilla HTML files still in `public/` (index.html, qr.html, app.css, etc.) — not used by React build but get copied to dist. Deploy script strips them.
-- `src/lib/rooms.ts` and `src/lib/utils/names.ts` are duplicate/unused files from the port
 - Chunk size warning on build (580KB JS) — motion library is large, could code-split
 
 ## GitHub
