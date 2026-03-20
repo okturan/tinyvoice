@@ -1,21 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
-import { getAllCachedKeys, getCachedSize } from "@/lib/model-cache";
-
-interface CachedModel {
-  key: string;
-  size: number;
-}
+import { getAllCachedKeys } from "@/lib/model-cache";
 
 interface UseModelCacheReturn {
-  cachedModels: CachedModel[];
-  totalSize: number;
+  cachedKeys: Set<string>;
   loading: boolean;
   refresh: () => void;
 }
 
 export function useModelCache(): UseModelCacheReturn {
-  const [cachedModels, setCachedModels] = useState<CachedModel[]>([]);
-  const [totalSize, setTotalSize] = useState(0);
+  const [cachedKeys, setCachedKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -26,38 +19,20 @@ export function useModelCache(): UseModelCacheReturn {
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
-      setLoading(true);
-      try {
-        const keys = await getAllCachedKeys();
-        const models: CachedModel[] = [];
-        let total = 0;
-        for (const key of keys) {
-          const size = await getCachedSize(key);
-          models.push({ key, size });
-          total += size;
-        }
-        if (!cancelled) {
-          setCachedModels(models);
-          setTotalSize(total);
-        }
-      } catch {
-        if (!cancelled) {
-          setCachedModels([]);
-          setTotalSize(0);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    getAllCachedKeys().then((keys) => {
+      if (!cancelled) {
+        setCachedKeys(new Set(keys));
+        setLoading(false);
       }
-    }
+    }).catch(() => {
+      if (!cancelled) {
+        setCachedKeys(new Set());
+        setLoading(false);
+      }
+    });
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [refreshKey]);
 
-  return { cachedModels, totalSize, loading, refresh };
+  return { cachedKeys, loading, refresh };
 }

@@ -54,20 +54,16 @@ const MODEL_GROUPS: ModelGroup[] = [
   },
 ];
 
-function formatSize(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(0)} MB`;
-  return `${(bytes / 1073741824).toFixed(1)} GB`;
-}
+const ALL_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
 
 export function ModelManagement() {
-  const { cachedModels, totalSize, loading, refresh } = useModelCache();
+  const { cachedKeys, loading, refresh } = useModelCache();
   const [downloading, setDownloading] = useState<string | null>(null);
   const [dlProgress, setDlProgress] = useState(0);
 
-  const cachedKeys = new Set(cachedModels.map(m => m.key));
+  const totalCachedMB = ALL_MODELS
+    .filter((m) => cachedKeys.has(m.name))
+    .reduce((sum, m) => sum + m.size, 0);
 
   const handleDelete = async (key: string) => {
     await delCache(key);
@@ -166,11 +162,11 @@ export function ModelManagement() {
       {/* Total + Clear All */}
       <div className="flex items-center justify-between pt-1 border-t border-[var(--surface0)]">
         <span className="text-[0.6rem] text-[var(--overlay)] font-mono">
-          {loading ? "Checking..." : `Total cached: ${formatSize(totalSize)}`}
+          {loading ? "Checking..." : `Total cached: ~${totalCachedMB} MB`}
         </span>
         <button
           onClick={handleClearAll}
-          disabled={totalSize === 0}
+          disabled={cachedKeys.size === 0}
           className="text-[0.6rem] text-[var(--overlay)] hover:text-[var(--red)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           Clear All
