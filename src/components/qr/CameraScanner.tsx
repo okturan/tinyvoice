@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { useCamera } from "@/hooks/useCamera";
 import { useQRScanner } from "@/hooks/useQRScanner";
-import { Camera, CameraOff } from "lucide-react";
+import CameraIcon from "@/components/ui/camera-icon";
 
 interface CameraScannerProps {
   onQRData: (data: string) => void;
@@ -52,12 +52,12 @@ export default function CameraScanner({ onQRData }: CameraScannerProps) {
       >
         {isActive ? (
           <>
-            <CameraOff className="size-3.5" />
+            <CameraIcon size={14} />
             Stop Camera
           </>
         ) : (
           <>
-            <Camera className="size-3.5" />
+            <CameraIcon size={14} />
             Start Camera
           </>
         )}

@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Trash2, Download, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import TrashIcon from "@/components/ui/trash-icon";
+import DownloadIcon from "@/components/ui/download-icon";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useModelCache } from "@/hooks/useModelCache";
@@ -140,7 +142,7 @@ export function ModelManagement() {
                           className="p-1 rounded text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer"
                           title={`Delete ${model.name}`}
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <TrashIcon size={12} />
                         </button>
                       </div>
                     ) : (
@@ -149,7 +151,7 @@ export function ModelManagement() {
                         disabled={!!downloading}
                         className="flex items-center gap-1 px-2 py-1 rounded text-[0.55rem] font-medium text-[var(--tv-accent)] hover:bg-[var(--tv-accent)]/10 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                       >
-                        {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                        {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <DownloadIcon size={12} />}
                         <span>Download</span>
                       </button>
                     )}

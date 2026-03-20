@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import GearIcon from "@/components/ui/gear-icon";
 import { SettingsSheet } from "@/components/layout/SettingsSheet";
 
 export function TopBar() {
@@ -45,14 +45,12 @@ export function TopBar() {
         <span className="flex-1" />
 
         {/* Right: Settings gear */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="min-h-[44px] min-w-[44px] text-[var(--overlay)] hover:text-[var(--text)]"
+        <button
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer"
           onClick={() => setSettingsOpen(true)}
         >
-          <Settings className="size-4" />
-        </Button>
+          <GearIcon size={16} />
+        </button>
 
       </div>
 

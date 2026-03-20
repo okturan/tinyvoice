@@ -5,7 +5,7 @@ import HexSheet from "./HexSheet";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
-import { Code } from "lucide-react";
+import CodeIcon from "@/components/ui/code-icon";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
   { label: "Auto", value: "auto" },
@@ -187,7 +187,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
           size="sm"
           onClick={() => setHexOpen(true)}
         >
-          <Code className="size-3" />
+          <CodeIcon size={12} />
           Hex
         </Button>
       </div>

@@ -1,17 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { Mic, Square, Loader2, Settings } from "lucide-react";
+import { Mic, Square, Loader2 } from "lucide-react";
+import GearIcon from "@/components/ui/gear-icon";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
 import { useRoom } from "@/contexts/RoomContext";
-import { useThemeContext } from "@/contexts/ThemeContext";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShareModal } from "@/components/ptt/ShareModal";
 import { HexDump } from "@/components/ptt/HexDump";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
@@ -47,7 +45,6 @@ export function PTTPage() {
   const room = useRoom();
   const recorder = useAudioRecorder();
   const player = useAudioPlayer();
-  const { theme, setTheme, themes } = useThemeContext();
 
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [pttState, setPttState] = useState<PTTState>("disabled");
@@ -171,18 +168,6 @@ export function PTTPage() {
               <span>recv <span className="text-[var(--text)]">{stats.totalRecv > 0 ? fmt(stats.totalRecv) : "0 B"}</span></span>
               <span>users <span className="text-[var(--text)]">{stats.userCount}</span></span>
             </div>
-            <Separator orientation="vertical" className="h-5 mx-3 bg-[var(--surface0)]" />
-            <div className="flex items-center gap-1">
-              {themes.map(t => (
-                <Tooltip key={t.id}>
-                  <TooltipTrigger asChild>
-                    <button onClick={() => setTheme(t.id)} className="w-3 h-3 rounded-full cursor-pointer transition-all hover:scale-125"
-                      style={{ background: t.swatch, boxShadow: theme === t.id ? `0 0 0 1.5px var(--base), 0 0 0 3px ${t.swatch}` : t.id === "midnight" ? "inset 0 0 0 1px rgba(255,255,255,0.15)" : "none" }} />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-[0.6rem] font-mono">{t.label}</TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
           </header>
 
           {/* ── Two-pane body ── */}
@@ -275,7 +260,7 @@ export function PTTPage() {
                 <Sheet>
                   <SheetTrigger asChild>
                     <button className="flex items-center gap-2 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer mb-2 w-full">
-                      <Settings className="w-3.5 h-3.5" /> Settings
+                      <GearIcon size={14} /> Settings
                     </button>
                   </SheetTrigger>
                   <SheetContent onOpenAutoFocus={e => e.preventDefault()} className="bg-[var(--mantle)] border-[var(--surface0)] text-[var(--text)] overflow-y-auto">

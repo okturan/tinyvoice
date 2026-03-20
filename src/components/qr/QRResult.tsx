@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button";
 import { codec } from "@/lib/codec-service";
 import { SR } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
-import { Copy, Download, Play, Square, Code } from "lucide-react";
+import { Play, Square } from "lucide-react";
+import CopyIcon from "@/components/ui/copy-icon";
+import DownloadIcon from "@/components/ui/download-icon";
+import CodeIcon from "@/components/ui/code-icon";
 
 interface QRResultProps {
   packed: Uint8Array;
@@ -142,18 +145,18 @@ export default function QRResult({
         </Button>
 
         <Button variant="outline" size="sm" onClick={copyUrl}>
-          <Copy className="size-3" />
+          <CopyIcon size={12} />
           {copied ? "Copied!" : "Copy URL"}
         </Button>
 
         <Button variant="outline" size="sm" onClick={downloadQR}>
-          <Download className="size-3" />
+          <DownloadIcon size={12} />
           Download
         </Button>
 
         {onHexOpen && (
           <Button variant="outline" size="sm" onClick={onHexOpen}>
-            <Code className="size-3" />
+            <CodeIcon size={12} />
             Hex
           </Button>
         )}
