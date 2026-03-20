@@ -1,0 +1,73 @@
+/* Theme System — 6 palettes
+   Each theme defines CSS custom properties used throughout the app.
+   Components reference these variables exclusively — no hardcoded colors. */
+
+[data-theme="mocha"] {
+  --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+  --surface0: #313244; --surface1: #45475a; --surface2: #585b70;
+  --text: #cdd6f4; --subtext: #a6adc8; --overlay: #6c7086;
+  --accent: #89b4fa; --green: #a6e3a1; --red: #f38ba8;
+  --yellow: #f9e2af; --blue: #89b4fa; --teal: #94e2d5;
+  --swatch: #89b4fa;
+}
+
+[data-theme="nord"] {
+  --base: #2e3440; --mantle: #272c36; --crust: #21262e;
+  --surface0: #3b4252; --surface1: #434c5e; --surface2: #4c566a;
+  --text: #eceff4; --subtext: #d8dee9; --overlay: #81899b;
+  --accent: #88c0d0; --green: #a3be8c; --red: #bf616a;
+  --yellow: #ebcb8b; --blue: #81a1c1; --teal: #8fbcbb;
+  --swatch: #5e81ac;
+}
+
+[data-theme="rosepine"] {
+  --base: #191724; --mantle: #1f1d2e; --crust: #16141f;
+  --surface0: #26233a; --surface1: #302d41; --surface2: #3e3a54;
+  --text: #e0def4; --subtext: #908caa; --overlay: #706d87;
+  --accent: #c4a7e7; --green: #9ccfd8; --red: #eb6f92;
+  --yellow: #f6c177; --blue: #7fafcf; --teal: #9ccfd8;
+  --swatch: #c4a7e7;
+}
+
+[data-theme="solarized"] {
+  --base: #002b36; --mantle: #00212b; --crust: #001920;
+  --surface0: #073642; --surface1: #1a4a56; --surface2: #2a6070;
+  --text: #fdf6e3; --subtext: #eee8d5; --overlay: #93a1a1;
+  --accent: #268bd2; --green: #2aa198; --red: #dc322f;
+  --yellow: #b58900; --blue: #268bd2; --teal: #2aa198;
+  --swatch: #2aa198;
+}
+
+[data-theme="latte"] {
+  --base: #eff1f5; --mantle: #e6e9ef; --crust: #dce0e8;
+  --surface0: #ccd0da; --surface1: #bcc0cc; --surface2: #acb0be;
+  --text: #4c4f69; --subtext: #5c5f77; --overlay: #7c7f93;
+  --accent: #1e66f5; --green: #40a02b; --red: #d20f39;
+  --yellow: #df8e1d; --blue: #1e66f5; --teal: #179299;
+  --swatch: #dd7878;
+}
+
+[data-theme="midnight"] {
+  --base: #121218; --mantle: #0e0e14; --crust: #0a0a0f;
+  --surface0: #1c1c26; --surface1: #262632; --surface2: #32323e;
+  --text: #d4d4e0; --subtext: #9898aa; --overlay: #5e5e70;
+  --accent: #6ea0d4; --green: #7ec89e; --red: #e06c7a;
+  --yellow: #d4b06a; --blue: #6ea0d4; --teal: #6ec4b8;
+  --swatch: #1c1c26;
+}
+
+/* Base body styles using theme variables */
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--crust);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Beacon animation used by room active card */
+@keyframes beacon {
+  0%, 100% { transform: scale(0.85); opacity: 0.2; }
+  50% { transform: scale(1.15); opacity: 0.4; }
+}
