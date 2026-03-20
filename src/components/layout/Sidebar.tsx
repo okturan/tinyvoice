@@ -267,7 +267,7 @@ export function Sidebar({
       {/* QR Link */}
       <div className="mt-auto p-2 px-3.5 border-t-0">
         <a
-          href="/qr.html"
+          href="/qr"
           className="flex items-center gap-2 text-[var(--overlay)] text-[0.75rem] no-underline transition-colors hover:text-[var(--accent)] py-1"
         >
           <svg

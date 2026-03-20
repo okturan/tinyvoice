@@ -242,7 +242,7 @@ export function PTTPage() {
 
       // Generate shareable link
       const b64 = btoa(String.fromCharCode(...packet));
-      const playUrl = `${location.origin}/qr.html?v=${encodeURIComponent(b64)}`;
+      const playUrl = `${location.origin}/qr?v=${encodeURIComponent(b64)}`;
       addLog(`Voice link: ${packet.length}B -> ${b64.length} chars`, "dim");
       setShareData({
         url: playUrl,
