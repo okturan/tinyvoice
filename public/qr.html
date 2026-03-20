@@ -11,7 +11,7 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1rem; }
 
-.app { width:min(94vw, 620px); }
+.app { width:min(92vw, 440px); }
 
 .header { text-align:center; margin-bottom:20px; }
 .header h1 { font-size:1.1rem; color:var(--text); }
@@ -56,44 +56,53 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .new-btn { display:inline-block; margin-top:12px; padding:7px 14px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; transition:all 0.1s; }
 .new-btn:hover { background:var(--surface0); color:var(--text); }
 
-/* ── QR result layout ────────────── */
-.qr-layout {
-  display: grid; grid-template-columns: auto 1fr; gap: 14px;
-  align-items: start;
+/* ── QR result ────────────────────── */
+.qr-main {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
 }
-.qr-left {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 8px; min-width: 180px;
-}
-.qr-left img { border-radius: 8px; background: white; padding: 6px; }
-
-.qr-hex-panel {
-  display: flex; flex-direction: column;
-  min-width: 0;
-}
-.hex-panel-title {
-  font-size: 0.55rem; color: var(--overlay);
-  text-transform: uppercase; letter-spacing: 0.1em;
-  font-weight: 600; margin-bottom: 5px;
-}
+.qr-main img { border-radius: 10px; background: white; padding: 8px; }
+.qr-actions { display: flex; gap: 6px; width: 100%; }
+.qr-actions > * { flex: 1; text-align: center; }
 
 .preview-btn {
-  padding: 5px 16px; border: 1px solid var(--surface0);
+  padding: 6px 20px; border: 1px solid var(--surface0);
   background: var(--surface0); color: var(--subtext);
-  border-radius: 16px; cursor: pointer;
-  font-family: 'Inter', sans-serif; font-size: 0.68rem;
+  border-radius: 20px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.72rem;
   font-weight: 500; transition: all 0.12s;
 }
 .preview-btn:hover { background: var(--surface1); color: var(--text); }
 .preview-btn.playing { border-color: var(--green); color: var(--green); }
 .preview-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
+/* ── Hex sidebar ─────────────────── */
+.hex-sidebar {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(45vw, 360px);
+  background: var(--base); border-left: 1px solid var(--surface0);
+  display: flex; flex-direction: column;
+  z-index: 100; transition: transform 0.25s ease;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+}
+.hex-sidebar.hidden { transform: translateX(100%); pointer-events: none; }
+.hex-sidebar-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--surface0);
+  font-size: 0.7rem; font-weight: 600; color: var(--overlay);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.hex-close {
+  width: 24px; height: 24px; border-radius: 6px; border: none;
+  background: var(--surface0); color: var(--overlay);
+  cursor: pointer; font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.hex-close:hover { background: var(--surface1); color: var(--text); }
+
 .hex-stream {
-  background: var(--mantle); border-radius: 8px; padding: 10px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.52rem;
-  line-height: 1.6; word-break: break-all;
-  overflow-y: auto; text-align: left;
-  color: var(--surface2); flex: 1; min-height: 100px; max-height: 250px;
+  flex: 1; overflow-y: auto; padding: 12px 16px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
+  line-height: 1.7; word-break: break-all;
+  color: var(--surface2);
 }
 .hex-stream .b {
   display: inline-block; width: 1.5em; text-align: center;
@@ -172,29 +181,31 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="rec-status" id="rec-status">Load models first</div>
     <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
-      <div class="qr-layout">
-        <div class="qr-left">
-          <img id="qr-img" width="160" height="160" alt="QR code" style="display:none">
-          <div class="qr-meta">
-            <span><b id="qr-bytes">0</b> B</span>
-            <span><b id="qr-tokens">0</b> tok</span>
-            <span><b id="qr-dur">0</b>s</span>
-          </div>
-          <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
-          <div class="qr-url-row">
-            <input class="qr-url" id="qr-url" readonly onclick="this.select()">
-            <button class="copy-btn" onclick="copyUrl()">Copy</button>
-          </div>
-          <div style="display:flex;gap:5px;margin-top:5px">
-            <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png" style="flex:1;text-align:center">Download</a>
-            <button class="new-btn" onclick="resetRecord()" style="flex:1">New</button>
-          </div>
+      <div class="qr-main">
+        <img id="qr-img" width="180" height="180" alt="QR code" style="display:none">
+        <div class="qr-meta">
+          <span><b id="qr-bytes">0</b> bytes</span>
+          <span><b id="qr-tokens">0</b> tokens</span>
+          <span><b id="qr-dur">0</b>s</span>
         </div>
-        <div class="qr-hex-panel">
-          <div class="hex-panel-title">Token Data</div>
-          <div class="hex-stream" id="hex-stream"></div>
+        <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
+        <div class="qr-url-row">
+          <input class="qr-url" id="qr-url" readonly onclick="this.select()">
+          <button class="copy-btn" onclick="copyUrl()">Copy</button>
+        </div>
+        <div class="qr-actions">
+          <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png">Download QR</a>
+          <button class="new-btn" onclick="resetRecord()">Record another</button>
         </div>
       </div>
+    </div>
+    <!-- Hex panel slides in from right -->
+    <div class="hex-sidebar hidden" id="hex-sidebar">
+      <div class="hex-sidebar-hdr">
+        <span>Token Data</span>
+        <button class="hex-close" onclick="document.getElementById('hex-sidebar').classList.add('hidden')">&times;</button>
+      </div>
+      <div class="hex-stream" id="hex-stream"></div>
     </div>
   </div>
 
@@ -372,6 +383,10 @@ async function recUp(e) {
   btn.classList.remove('recording');
   btn.classList.add('encoding');
   btn.querySelector('.icon').textContent = '⏳';
+  btn.querySelector('span:last-child').textContent = 'ENCODING';
+
+  // Force UI update before heavy WASM work blocks the thread
+  await new Promise(r => setTimeout(r, 50));
 
   const st = document.getElementById('rec-status');
   const prog = document.getElementById('rec-prog');
@@ -406,12 +421,14 @@ async function recUp(e) {
     const dv = new DataView(pk.buffer);
     for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
 
-    // Show result area with hex stream
+    // Show result
     document.getElementById('qr-result').style.display = 'block';
 
-    // Build hex display
+    // Build hex in sidebar
+    const hexSidebar = document.getElementById('hex-sidebar');
     const hexEl = document.getElementById('hex-stream');
     hexEl.innerHTML = '';
+    hexSidebar.classList.remove('hidden');
     const hexChars = [];
     for (let i = 0; i < pk.length; i++) {
       const span = document.createElement('span');
@@ -468,10 +485,12 @@ async function recUp(e) {
 
   btn.classList.remove('encoding');
   btn.querySelector('.icon').textContent = '🎙';
+  btn.querySelector('span:last-child').textContent = 'HOLD';
 }
 
 function resetRecord() {
   document.getElementById('qr-result').style.display = 'none';
+  document.getElementById('hex-sidebar').classList.add('hidden');
   document.getElementById('rec-prog').style.width = '0%';
   document.getElementById('rec-status').className = 'rec-status ok';
   document.getElementById('rec-status').textContent = 'Ready — hold to record';
