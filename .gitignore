@@ -8,3 +8,4 @@ dist/
 dist/
 .claude/worktrees/
 .playwright-mcp/
+*.png
