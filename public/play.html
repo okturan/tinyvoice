@@ -6,64 +6,112 @@
 <title>TinyVoice — Voice Message</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="themes.css">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background: var(--crust); color: var(--text);
-  height: 100vh; display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
 }
 .card {
-  width: min(90vw, 420px);
+  width: min(92vw, 440px);
   background: var(--base); border: 1px solid var(--surface0);
-  border-radius: 16px; padding: 32px; text-align: center;
+  border-radius: 16px; padding: 28px; text-align: center;
 }
 h1 { font-size: 1.1rem; color: var(--text); margin-bottom: 4px; }
-.sub { font-size: 0.75rem; color: var(--overlay); margin-bottom: 24px; }
-.bytes {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.65rem; color: var(--surface2);
-  word-break: break-all; line-height: 1.5;
-  max-height: 60px; overflow: hidden;
-  margin-bottom: 16px; padding: 10px;
-  background: var(--mantle); border-radius: 8px;
+.sub { font-size: 0.75rem; color: var(--overlay); margin-bottom: 20px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--mantle); border-radius: 8px; padding: 3px; }
+.tab { flex: 1; padding: 7px; border: none; background: none; color: var(--overlay); font-family: 'Inter', sans-serif; font-size: 0.72rem; font-weight: 500; cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+.tab.active { background: var(--surface0); color: var(--text); }
+.tab:hover:not(.active) { color: var(--subtext); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Drop zone */
+.dropzone {
+  border: 2px dashed var(--surface1); border-radius: 12px;
+  padding: 32px 16px; cursor: pointer; transition: all 0.15s;
+  margin-bottom: 16px;
 }
-.play-btn {
-  width: 80px; height: 80px; border-radius: 50%;
-  border: 2px solid var(--accent); background: var(--mantle);
-  color: var(--accent); cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 2rem; transition: all 0.15s;
-  margin-bottom: 12px;
-}
+.dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--base)); }
+.dropzone .icon { font-size: 2rem; margin-bottom: 8px; }
+.dropzone .label { font-size: 0.8rem; color: var(--subtext); }
+.dropzone .hint { font-size: 0.65rem; color: var(--overlay); margin-top: 4px; }
+
+/* Camera */
+.cam-wrap { position: relative; margin-bottom: 16px; border-radius: 12px; overflow: hidden; background: var(--mantle); }
+.cam-wrap video { width: 100%; display: block; border-radius: 12px; }
+.cam-wrap canvas { display: none; }
+.cam-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.cam-crosshair { width: 180px; height: 180px; border: 2px solid var(--accent); border-radius: 12px; opacity: 0.5; }
+.cam-status { font-size: 0.72rem; color: var(--overlay); margin-bottom: 12px; }
+.cam-btn { padding: 8px 20px; border: 1px solid var(--surface0); background: var(--surface0); color: var(--subtext); border-radius: 7px; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 0.78rem; transition: all 0.1s; }
+.cam-btn:hover { background: var(--surface1); color: var(--text); }
+.cam-btn.active { border-color: var(--red); color: var(--red); }
+
+/* Player (reused) */
+.bytes { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--surface2); word-break: break-all; line-height: 1.4; max-height: 48px; overflow: hidden; margin-bottom: 14px; padding: 8px; background: var(--mantle); border-radius: 8px; }
+.play-btn { width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--accent); background: var(--mantle); color: var(--accent); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 1.8rem; transition: all 0.15s; margin-bottom: 10px; }
 .play-btn:hover { background: var(--surface0); transform: scale(1.05); }
 .play-btn.loading { border-color: var(--yellow); color: var(--yellow); animation: pulse 1.2s ease infinite; }
 .play-btn.playing { border-color: var(--green); color: var(--green); }
 .play-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-.status { font-size: 0.78rem; color: var(--overlay); min-height: 1.5em; }
+.status { font-size: 0.75rem; color: var(--overlay); min-height: 1.4em; }
 .status.ok { color: var(--green); }
 .status.err { color: var(--red); }
-.meta {
-  margin-top: 20px; padding-top: 16px;
-  border-top: 1px solid var(--surface0);
-  display: flex; justify-content: center; gap: 24px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--overlay);
-}
+.meta { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--surface0); display: flex; justify-content: center; gap: 20px; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--overlay); }
 .meta b { color: var(--text); font-weight: 600; }
-.prog { width: 100%; height: 2px; background: var(--surface0); border-radius: 1px; overflow: hidden; margin: 12px 0; }
+.prog { width: 100%; height: 2px; background: var(--surface0); border-radius: 1px; overflow: hidden; margin: 10px 0; }
 .prog-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.3s; }
-.empty { color: var(--overlay); font-size: 0.85rem; }
-.record-link { display: inline-block; margin-top: 16px; font-size: 0.75rem; color: var(--accent); text-decoration: none; }
+.record-link { display: inline-block; margin-top: 14px; font-size: 0.72rem; color: var(--accent); text-decoration: none; }
 .record-link:hover { text-decoration: underline; }
+
+/* Hidden file input */
+#file-input { display: none; }
 </style>
 </head>
 <body>
 
-<div class="card" id="card">
+<div class="card">
   <h1>TinyVoice</h1>
-  <p class="sub">voice message in a QR code</p>
-  <div id="content"></div>
+  <p class="sub" id="subtitle">voice message decoder</p>
+
+  <!-- Player area — shown when we have data -->
+  <div id="player" style="display:none"></div>
+
+  <!-- Input area — shown when no data -->
+  <div id="input-area">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('drop')">Drop File</button>
+      <button class="tab" onclick="switchTab('cam')">Scan QR</button>
+    </div>
+
+    <div class="tab-content active" id="tab-drop">
+      <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+        <div class="icon">📂</div>
+        <div class="label">Drop a .tv file or QR image here</div>
+        <div class="hint">or click to browse — raw token bytes, QR screenshot, anything</div>
+      </div>
+      <input type="file" id="file-input" accept="*/*" onchange="handleFile(this.files[0])">
+    </div>
+
+    <div class="tab-content" id="tab-cam">
+      <div class="cam-wrap">
+        <video id="cam-video" autoplay playsinline muted></video>
+        <canvas id="cam-canvas"></canvas>
+        <div class="cam-overlay"><div class="cam-crosshair"></div></div>
+      </div>
+      <div class="cam-status" id="cam-status">Camera off</div>
+      <button class="cam-btn" id="cam-btn" onclick="toggleCamera()">Start Camera</button>
+    </div>
+
+    <a class="record-link" href="./">Record a voice message &rarr;</a>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
@@ -71,138 +119,287 @@ h1 { font-size: 1.1rem; color: var(--text); margin-bottom: 4px; }
 const SR = 16000, NFFT = 1024, HOP = 320, WLEN = 1024, PAD = 352;
 const MODEL_BASE = 'https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
 
-// Get voice data from query string
-const params = new URLSearchParams(location.search);
-const voiceB64 = params.get('v');
+let istftWin = null, decSess = null, playCtx = null;
 
-const content = document.getElementById('content');
+// === TABS ===
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', (i === 0 && id === 'drop') || (i === 1 && id === 'cam')));
+  document.getElementById('tab-drop').classList.toggle('active', id === 'drop');
+  document.getElementById('tab-cam').classList.toggle('active', id === 'cam');
+  if (id === 'drop') stopCamera();
+}
 
-if (!voiceB64) {
-  content.innerHTML = `
-    <p class="empty">No voice message in this link.</p>
-    <a class="record-link" href="./">Record a voice message &rarr;</a>
-  `;
-} else {
-  // Decode base64 to bytes
-  const raw = atob(voiceB64);
-  const data = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+// === iSTFT ===
+function irfft(re,im,n){const fR=new Float32Array(n),fI=new Float32Array(n);const h=re.length;for(let i=0;i<h;i++){fR[i]=re[i];fI[i]=im[i]}for(let i=h;i<n;i++){fR[i]=fR[n-i];fI[i]=-fI[n-i]}let j=0;for(let i=0;i<n;i++){if(i<j){[fR[i],fR[j]]=[fR[j],fR[i]];[fI[i],fI[j]]=[fI[j],fI[i]]}let m=n>>1;while(m>=1&&j>=m){j-=m;m>>=1}j+=m}for(let s=2;s<=n;s*=2){const hs=s/2,a=2*Math.PI/s;for(let i=0;i<n;i+=s)for(let k=0;k<hs;k++){const c=Math.cos(a*k),sn=Math.sin(a*k),tR=c*fR[i+hs+k]-sn*fI[i+hs+k],tI=sn*fR[i+hs+k]+c*fI[i+hs+k];fR[i+hs+k]=fR[i+k]-tR;fI[i+hs+k]=fI[i+k]-tI;fR[i+k]+=tR;fI[i+k]+=tI}}const o=new Float32Array(n);for(let i=0;i<n;i++)o[i]=fR[i]/n;return o}
+function istft(mag,ph){const hN=NFFT/2+1,T=mag.length/hN,oS=(T-1)*HOP+WLEN;const o=new Float32Array(oS),wE=new Float32Array(oS);for(let t=0;t<T;t++){const off=t*hN,r=new Float32Array(hN),im=new Float32Array(hN);for(let f=0;f<hN;f++){r[f]=mag[off+f]*Math.cos(ph[off+f]);im[f]=mag[off+f]*Math.sin(ph[off+f])}const fr=irfft(r,im,NFFT),st=t*HOP;for(let i=0;i<WLEN;i++){o[st+i]+=fr[i]*istftWin[i];wE[st+i]+=istftWin[i]*istftWin[i]}}for(let i=0;i<oS;i++)if(wE[i]>1e-8)o[i]/=wE[i];return o.slice(PAD,oS-PAD)}
+
+// === HANDLE TOKEN DATA ===
+function loadTokenData(data) {
+  if (data.length < 4 || data.length % 2 !== 0) {
+    showError('Invalid data — expected even number of bytes (16-bit tokens)');
+    return;
+  }
 
   const nTokens = data.length / 2;
-  const durationEstimate = (nTokens / 50).toFixed(1);
+  const dur = (nTokens / 50).toFixed(1);
+  const hex = Array.from(data.slice(0, 60), b => b.toString(16).padStart(2, '0')).join(' ');
 
-  content.innerHTML = `
-    <div class="bytes">${voiceB64.slice(0, 120)}...</div>
-    <button class="play-btn" id="play-btn" onclick="playMessage()">&#9654;</button>
+  document.getElementById('input-area').style.display = 'none';
+  document.getElementById('subtitle').textContent = 'voice message decoded';
+
+  const player = document.getElementById('player');
+  player.style.display = 'block';
+  player.innerHTML = `
+    <div class="bytes">${hex}${data.length > 60 ? ' ...' : ''}</div>
+    <button class="play-btn" id="play-btn" onclick="decodeAndPlay()">&#9654;</button>
     <div class="prog"><div class="prog-fill" id="prog"></div></div>
-    <div class="status" id="status">Tap to play</div>
+    <div class="status" id="status">Tap to play — ${data.length} bytes, ~${dur}s</div>
     <div class="meta">
       <span><b>${data.length}</b> bytes</span>
       <span><b>${nTokens}</b> tokens</span>
-      <span>~<b>${durationEstimate}</b>s</span>
+      <span>~<b>${dur}</b>s</span>
     </div>
   `;
 
-  let istftWin = null;
-  let decSess = null;
-  let played = false;
+  // Store for decode
+  window._tokenData = data;
+  window._nTokens = nTokens;
+}
 
-  // iSTFT
-  function irfft(re,im,n){const fR=new Float32Array(n),fI=new Float32Array(n);const h=re.length;for(let i=0;i<h;i++){fR[i]=re[i];fI[i]=im[i]}for(let i=h;i<n;i++){fR[i]=fR[n-i];fI[i]=-fI[n-i]}let j=0;for(let i=0;i<n;i++){if(i<j){[fR[i],fR[j]]=[fR[j],fR[i]];[fI[i],fI[j]]=[fI[j],fI[i]]}let m=n>>1;while(m>=1&&j>=m){j-=m;m>>=1}j+=m}for(let s=2;s<=n;s*=2){const hs=s/2,a=2*Math.PI/s;for(let i=0;i<n;i+=s)for(let k=0;k<hs;k++){const c=Math.cos(a*k),sn=Math.sin(a*k),tR=c*fR[i+hs+k]-sn*fI[i+hs+k],tI=sn*fR[i+hs+k]+c*fI[i+hs+k];fR[i+hs+k]=fR[i+k]-tR;fI[i+hs+k]=fI[i+k]-tI;fR[i+k]+=tR;fI[i+k]+=tI}}const o=new Float32Array(n);for(let i=0;i<n;i++)o[i]=fR[i]/n;return o}
-  function istft(mag,ph){const hN=NFFT/2+1,T=mag.length/hN,oS=(T-1)*HOP+WLEN;const o=new Float32Array(oS),wE=new Float32Array(oS);for(let t=0;t<T;t++){const off=t*hN,r=new Float32Array(hN),im=new Float32Array(hN);for(let f=0;f<hN;f++){r[f]=mag[off+f]*Math.cos(ph[off+f]);im[f]=mag[off+f]*Math.sin(ph[off+f])}const fr=irfft(r,im,NFFT),st=t*HOP;for(let i=0;i<WLEN;i++){o[st+i]+=fr[i]*istftWin[i];wE[st+i]+=istftWin[i]*istftWin[i]}}for(let i=0;i<oS;i++)if(wE[i]>1e-8)o[i]/=wE[i];return o.slice(PAD,oS-PAD)}
+function showError(msg) {
+  const s = document.getElementById('status') || document.getElementById('cam-status');
+  if (s) { s.className = 'status err'; s.textContent = msg; }
+}
 
-  async function playMessage() {
-    const btn = document.getElementById('play-btn');
-    const status = document.getElementById('status');
-    const prog = document.getElementById('prog');
+// === DRAG & DROP ===
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
 
-    if (played && window._audioBuffer) {
-      // Replay without re-decoding
-      const ctx = new AudioContext({ sampleRate: SR });
-      const src = ctx.createBufferSource();
-      src.buffer = window._audioBuffer;
-      src.connect(ctx.destination);
-      btn.className = 'play-btn playing';
-      btn.innerHTML = '&#9646;&#9646;';
-      src.onended = () => { btn.className = 'play-btn'; btn.innerHTML = '&#9654;'; };
-      src.start();
+function handleFile(file) {
+  if (!file) return;
+
+  // If it's an image, try to read QR from it
+  if (file.type.startsWith('image/')) {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const qr = jsQR(imageData.data, canvas.width, canvas.height);
+      if (qr && qr.data) {
+        handleQRData(qr.data);
+      } else {
+        showError('No QR code found in image');
+      }
+    };
+    img.src = URL.createObjectURL(file);
+    return;
+  }
+
+  // Otherwise treat as raw bytes
+  const reader = new FileReader();
+  reader.onload = () => {
+    const data = new Uint8Array(reader.result);
+    loadTokenData(data);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function handleQRData(qrString) {
+  // Could be a URL with ?v= param, or raw base64
+  try {
+    const url = new URL(qrString);
+    const v = url.searchParams.get('v');
+    if (v) {
+      const raw = atob(decodeURIComponent(v));
+      const data = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+      loadTokenData(data);
       return;
     }
+  } catch {}
 
-    btn.disabled = true;
-    btn.className = 'play-btn loading';
-    btn.innerHTML = '&#8987;';
-
-    try {
-      // Load iSTFT window
-      status.textContent = 'Loading iSTFT...';
-      prog.style.width = '5%';
-      const wr = await fetch(MODEL_BASE + 'istft_window.json');
-      istftWin = new Float32Array(await wr.json());
-
-      // Load decoder
-      status.textContent = 'Loading decoder (135 MB)...';
-      const resp = await fetch(MODEL_BASE + 'decoder_50hz.onnx');
-      const total = +resp.headers.get('Content-Length') || 141000000;
-      const reader = resp.body.getReader();
-      const chunks = [];
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        prog.style.width = (5 + (received/total) * 70) + '%';
-      }
-      const modelBytes = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) { modelBytes.set(chunk, offset); offset += chunk.length; }
-
-      status.textContent = 'Initializing decoder...';
-      prog.style.width = '80%';
-      decSess = await ort.InferenceSession.create(modelBytes.buffer, { executionProviders: ['wasm'] });
-
-      // Decode tokens
-      status.textContent = 'Decoding voice...';
-      prog.style.width = '90%';
-      const tokens = new BigInt64Array(nTokens);
-      const dv = new DataView(data.buffer);
-      for (let i = 0; i < nTokens; i++) tokens[i] = BigInt(dv.getUint16(i*2, true));
-
-      const input = new ort.Tensor('int64', tokens, [1, nTokens]);
-      const result = await decSess.run({ tokens: input });
-      const audio = istft(result.magnitude.data, result.phase.data);
-
-      prog.style.width = '100%';
-
-      // Play
-      const ctx = new AudioContext({ sampleRate: SR });
-      const buf = ctx.createBuffer(1, audio.length, SR);
-      buf.getChannelData(0).set(audio);
-      window._audioBuffer = buf;
-
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(ctx.destination);
-
-      btn.className = 'play-btn playing';
-      btn.innerHTML = '&#9646;&#9646;';
-      btn.disabled = false;
-      played = true;
-      status.className = 'status ok';
-      status.textContent = `Decoded ${(audio.length/SR).toFixed(1)}s from ${data.length} bytes`;
-
-      src.onended = () => { btn.className = 'play-btn'; btn.innerHTML = '&#9654;'; };
-      src.start();
-
-    } catch (e) {
-      status.className = 'status err';
-      status.textContent = 'Error: ' + e.message;
-      btn.className = 'play-btn';
-      btn.innerHTML = '&#9654;';
-      btn.disabled = false;
-      console.error(e);
+  // Try as raw base64
+  try {
+    const raw = atob(qrString);
+    const data = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+    if (data.length >= 4 && data.length % 2 === 0) {
+      loadTokenData(data);
+      return;
     }
+  } catch {}
+
+  showError('QR code does not contain voice data');
+}
+
+// === CAMERA QR SCAN ===
+let camStream = null;
+let scanInterval = null;
+
+function toggleCamera() {
+  if (camStream) { stopCamera(); return; }
+
+  const btn = document.getElementById('cam-btn');
+  const status = document.getElementById('cam-status');
+  const video = document.getElementById('cam-video');
+
+  btn.textContent = 'Starting...';
+  status.textContent = 'Requesting camera...';
+
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => {
+      camStream = stream;
+      video.srcObject = stream;
+      btn.textContent = 'Stop Camera';
+      btn.classList.add('active');
+      status.textContent = 'Point at a TinyVoice QR code';
+
+      // Start scanning
+      const canvas = document.getElementById('cam-canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      scanInterval = setInterval(() => {
+        if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const qr = jsQR(imageData.data, canvas.width, canvas.height);
+        if (qr && qr.data) {
+          stopCamera();
+          handleQRData(qr.data);
+        }
+      }, 250);
+    })
+    .catch(e => {
+      status.textContent = 'Camera error: ' + e.message;
+      btn.textContent = 'Start Camera';
+    });
+}
+
+function stopCamera() {
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  const btn = document.getElementById('cam-btn');
+  if (btn) { btn.textContent = 'Start Camera'; btn.classList.remove('active'); }
+  const status = document.getElementById('cam-status');
+  if (status) status.textContent = 'Camera off';
+}
+
+// === DECODE & PLAY ===
+let audioBuffer = null;
+
+async function decodeAndPlay() {
+  const btn = document.getElementById('play-btn');
+  const status = document.getElementById('status');
+  const prog = document.getElementById('prog');
+  const data = window._tokenData;
+  const nTokens = window._nTokens;
+
+  if (audioBuffer) {
+    // Replay
+    if (!playCtx || playCtx.state === 'closed') playCtx = new AudioContext({ sampleRate: SR });
+    if (playCtx.state === 'suspended') await playCtx.resume();
+    const src = playCtx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(playCtx.destination);
+    btn.className = 'play-btn playing'; btn.innerHTML = '&#9646;&#9646;';
+    src.onended = () => { btn.className = 'play-btn'; btn.innerHTML = '&#9654;'; };
+    src.start();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.className = 'play-btn loading';
+  btn.innerHTML = '&#8987;';
+
+  try {
+    status.textContent = 'Loading iSTFT...';
+    prog.style.width = '5%';
+    const wr = await fetch(MODEL_BASE + 'istft_window.json');
+    istftWin = new Float32Array(await wr.json());
+
+    status.textContent = 'Loading decoder...';
+    const resp = await fetch(MODEL_BASE + 'decoder_50hz.onnx');
+    const total = +resp.headers.get('Content-Length') || 141000000;
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      prog.style.width = (5 + (received/total) * 70) + '%';
+      if (received % (20*1024*1024) < 65536) {
+        status.textContent = `Decoder: ${(received/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB`;
+      }
+    }
+    const modelBytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) { modelBytes.set(chunk, offset); offset += chunk.length; }
+
+    status.textContent = 'Initializing...';
+    prog.style.width = '80%';
+    decSess = await ort.InferenceSession.create(modelBytes.buffer, { executionProviders: ['wasm'] });
+
+    status.textContent = 'Decoding voice...';
+    prog.style.width = '90%';
+    const tokens = new BigInt64Array(nTokens);
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    for (let i = 0; i < nTokens; i++) tokens[i] = BigInt(dv.getUint16(i*2, true));
+
+    const input = new ort.Tensor('int64', tokens, [1, nTokens]);
+    const result = await decSess.run({ tokens: input });
+    const audio = istft(result.magnitude.data, result.phase.data);
+    prog.style.width = '100%';
+
+    playCtx = new AudioContext({ sampleRate: SR });
+    audioBuffer = playCtx.createBuffer(1, audio.length, SR);
+    audioBuffer.getChannelData(0).set(audio);
+
+    const src = playCtx.createBufferSource();
+    src.buffer = audioBuffer;
+    src.connect(playCtx.destination);
+
+    btn.className = 'play-btn playing';
+    btn.innerHTML = '&#9646;&#9646;';
+    btn.disabled = false;
+    status.className = 'status ok';
+    status.textContent = `${(audio.length/SR).toFixed(1)}s decoded from ${data.length} bytes`;
+    src.onended = () => { btn.className = 'play-btn'; btn.innerHTML = '&#9654;'; };
+    src.start();
+
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = 'Error: ' + e.message;
+    btn.className = 'play-btn'; btn.innerHTML = '&#9654;'; btn.disabled = false;
+    console.error(e);
+  }
+}
+
+// === CHECK URL FOR VOICE DATA ===
+const params = new URLSearchParams(location.search);
+const voiceB64 = params.get('v');
+if (voiceB64) {
+  try {
+    const raw = atob(decodeURIComponent(voiceB64));
+    const data = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+    loadTokenData(data);
+  } catch (e) {
+    showError('Invalid voice data in URL');
   }
 }
 </script>
