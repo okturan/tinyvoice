@@ -90,11 +90,21 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const decSessions = useRef<SessionCache>({});
   const istftWinRef = useRef<Float32Array | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const lastProgressUpdate = useRef(0);
+
+  // Throttled progress setter — prevents jittery re-renders during fast downloads
+  const setProgressThrottled = useCallback((value: number) => {
+    const now = Date.now();
+    if (value >= 100 || value === 0 || now - lastProgressUpdate.current > 150) {
+      lastProgressUpdate.current = now;
+      setProgress(Math.round(value));
+    }
+  }, []);
 
   const loadModels = useCallback(async () => {
-    if (modelsLoaded) return;
+    if (modelsLoaded || state === "loading") return;
     setState("loading");
-    setProgress(0);
+    setProgressThrottled(0);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -109,31 +119,31 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       // Decoder 50hz
       setStatusText("Decoder 50hz (135 MB)...");
       const decPromise = loadAndCreateSession("decoder_50hz.onnx", (info) => {
-        setProgress(info.progress * 15);
+        setProgressThrottled(info.progress * 15);
         setStatusText(info.status);
       }, signal);
       decSessions.current["50hz"] = decPromise;
       await decPromise;
-      setProgress(15);
+      setProgressThrottled(15);
 
       // Encoder (WavLM -- shared across all qualities)
       setStatusText("Encoder (595 MB)...");
       const encSess = await loadAndCreateSession("encoder.onnx", (info) => {
-        setProgress(15 + info.progress * 65);
+        setProgressThrottled(15 + info.progress * 65);
         setStatusText(info.status);
       }, signal);
       encSessRef.current = encSess;
-      setProgress(80);
+      setProgressThrottled(80);
 
       // Compressor 50hz
       setStatusText("Compressor 50hz (70 MB)...");
       const compPromise = loadAndCreateSession("compressor_50hz.onnx", (info) => {
-        setProgress(80 + info.progress * 15);
+        setProgressThrottled(80 + info.progress * 15);
         setStatusText(info.status);
       }, signal);
       compSessions.current["50hz"] = compPromise;
       await compPromise;
-      setProgress(100);
+      setProgressThrottled(100);
 
       setState("ready");
       setStatusText("Ready \u2014 encoder + 50hz comp/dec");

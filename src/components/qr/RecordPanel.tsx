@@ -285,7 +285,7 @@ export default function RecordPanel() {
                 onClick={handleLoadModels}
                 disabled={loading}
               >
-                {loading ? "Loading..." : "Load Models"}
+                {loading ? "Downloading..." : "Download Models"}
               </Button>
               {(loading || progress > 0) && (
                 <Progress value={progress} className="h-1.5" />

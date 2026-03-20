@@ -23,9 +23,21 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
     () => (typeof localStorage !== "undefined" ? localStorage.getItem("fc-username") || "" : "")
   );
 
+  const [confirmClear, setConfirmClear] = useState(false);
+
   const handleUsernameChange = (value: string) => {
     setUsername(value);
     localStorage.setItem("fc-username", value);
+  };
+
+  const handleClear = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      setTimeout(() => setConfirmClear(false), 3000);
+      return;
+    }
+    codec.clearModelCache();
+    setConfirmClear(false);
   };
 
   return (
@@ -71,13 +83,17 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                 disabled={codec.modelsLoaded || codec.state === "loading"}
                 className="flex-1 py-2 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               >
-                {codec.state === "loading" ? "Loading..." : "Load Models"}
+                {codec.state === "loading" ? "Downloading..." : codec.modelsLoaded ? "Downloaded" : "Download Models"}
               </button>
               <button
-                onClick={() => codec.clearModelCache()}
-                className="py-2 px-3 rounded-md text-[0.7rem] text-[var(--overlay)] border border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20 transition-colors cursor-pointer"
+                onClick={handleClear}
+                className={`py-2 px-3 rounded-md text-[0.7rem] border transition-colors cursor-pointer ${
+                  confirmClear
+                    ? "text-[var(--red)] border-[var(--red)]/40 bg-[var(--red)]/10 font-semibold"
+                    : "text-[var(--overlay)] border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20"
+                }`}
               >
-                Clear
+                {confirmClear ? "Confirm?" : "Delete All"}
               </button>
             </div>
           </div>
