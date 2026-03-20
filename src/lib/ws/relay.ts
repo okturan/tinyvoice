@@ -2,13 +2,13 @@
 export const RELAY_WS =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "ws://localhost:8787/ws/"
-    : "wss://focalcodec-relay.okan.workers.dev/ws/";
+    : "wss://tinyvoice-relay.okan.workers.dev/ws/";
 
 /** HTTP endpoint for lobby room list */
 export const RELAY_HTTP =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:8787"
-    : "https://focalcodec-relay.okan.workers.dev";
+    : "https://tinyvoice-relay.okan.workers.dev";
 
 // ── Message types ──────────────────────────────────────
 

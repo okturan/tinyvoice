@@ -10,12 +10,12 @@ export const MODEL_BASE =
 export const RELAY_HTTP =
   location.hostname === "localhost"
     ? "http://localhost:8787"
-    : "https://focalcodec-relay.okan.workers.dev";
+    : "https://tinyvoice-relay.okan.workers.dev";
 
 export const WORKER_WS =
   location.hostname === "localhost"
     ? "ws://localhost:8787/ws/"
-    : "wss://focalcodec-relay.okan.workers.dev/ws/";
+    : "wss://tinyvoice-relay.okan.workers.dev/ws/";
 
 /** Magic bytes for wire format quality detection */
 export const MAGIC = {
