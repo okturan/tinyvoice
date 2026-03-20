@@ -51,6 +51,17 @@ export async function clearModelCache(): Promise<void> {
   });
 }
 
+/** Fast existence check — does NOT read the data blob */
+export async function isCached(key: string): Promise<boolean> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).count(IDBKeyRange.only(key));
+    req.onsuccess = () => resolve(req.result > 0);
+    req.onerror = () => resolve(false);
+  });
+}
+
 export async function getAllCachedKeys(): Promise<string[]> {
   const db = await openDB();
   return new Promise((resolve) => {

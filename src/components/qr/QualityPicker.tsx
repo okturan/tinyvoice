@@ -1,5 +1,5 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { getCached } from "@/lib/model-cache";
+import { isCached } from "@/lib/model-cache";
 import { QUALITY_OPTIONS } from "@/lib/constants";
 import { Quality } from "@/types/codec";
 import { useEffect, useState } from "react";
@@ -22,9 +22,7 @@ export default function QualityPicker({ value, onChange }: QualityPickerProps) {
     async function checkCaches() {
       const results: Record<string, boolean> = {};
       for (const q of QUALITY_OPTIONS) {
-        const compKey = `compressor_${q.value}.onnx`;
-        const cached = await getCached(compKey);
-        results[q.value] = !!(cached && cached.byteLength > 1048576);
+        results[q.value] = await isCached(`compressor_${q.value}.onnx`);
       }
       setCacheState(results as Record<Quality, boolean>);
     }
