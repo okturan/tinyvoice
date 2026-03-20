@@ -3,31 +3,20 @@ import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { AppShell } from "@/components/layout/AppShell";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageShell } from "@/components/layout/PageShell";
+import { TopBar } from "@/components/layout/TopBar";
 import { PTTButton, type PTTState } from "@/components/ptt/PTTButton";
 import { RecordingInfo } from "@/components/ptt/RecordingInfo";
 import { StatsStrip } from "@/components/ptt/StatsStrip";
 import { ActivityLog, type LogEntry } from "@/components/ptt/ActivityLog";
 import { ShareModal } from "@/components/ptt/ShareModal";
-import { WORKER_WS, SR, type ThemeId } from "@/lib/constants";
+import { WORKER_WS, SR } from "@/lib/constants";
 import { randomName } from "@/lib/names";
 import { fmt } from "@/lib/format";
 
 let logIdCounter = 0;
 
 export function PTTPage() {
-  // Theme
-  const [theme, setTheme] = useState<ThemeId>(() => {
-    return (localStorage.getItem("fc-theme") as ThemeId) || "mocha";
-  });
-  const handleThemeChange = useCallback((id: ThemeId) => {
-    setTheme(id);
-    document.documentElement.dataset.theme = id;
-    localStorage.setItem("fc-theme", id);
-  }, []);
-
   // Username
   const [username, setUsername] = useState(
     () => localStorage.getItem("fc-username") || randomName()
@@ -277,47 +266,41 @@ export function PTTPage() {
         ? "idle"
         : "disabled";
 
-  return (
-    <>
-      <AppShell
-        header={<Header theme={theme} onThemeChange={handleThemeChange} />}
-        sidebar={
-          <Sidebar
-            username={username}
-            onUsernameChange={handleUsernameChange}
-            connected={connected}
-            connectedRoom={connectedRoom}
-            connectedUsers={connectedUsers}
-            onJoinRoom={joinRoom}
-            onLeaveRoom={leaveRoom}
-          />
-        }
-      >
-        <div className="flex flex-col min-h-0 overflow-hidden">
-          {/* PTT zone */}
-          <div className="flex-none flex flex-col items-center justify-center relative py-6 px-3 pb-15">
-            <PTTButton
-              state={effectivePttState}
-              onPointerDown={handlePttDown}
-              onPointerUp={handlePttUp}
-            />
-            <RecordingInfo
-              active={recorder.isRecording}
-              duration={recorder.duration}
-              analyserNode={recorder.analyserNode}
-            />
-            {!recorder.isRecording && (
-              <div className="text-[0.65rem] text-[var(--overlay)] opacity-40 mt-2">
-                hold to talk {"\u00b7"} release to send
-              </div>
-            )}
-            <StatsStrip />
-          </div>
+  // Suppress unused variable warnings — these will be wired up in the next unit
+  void handleUsernameChange;
+  void connected;
+  void connectedRoom;
+  void connectedUsers;
+  void joinRoom;
+  void leaveRoom;
 
-          {/* Activity log */}
-          <ActivityLog entries={logEntries} />
+  return (
+    <PageShell>
+      <TopBar />
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* PTT zone */}
+        <div className="flex-none flex flex-col items-center justify-center relative py-6 px-3 pb-15">
+          <PTTButton
+            state={effectivePttState}
+            onPointerDown={handlePttDown}
+            onPointerUp={handlePttUp}
+          />
+          <RecordingInfo
+            active={recorder.isRecording}
+            duration={recorder.duration}
+            analyserNode={recorder.analyserNode}
+          />
+          {!recorder.isRecording && (
+            <div className="text-[0.65rem] text-[var(--overlay)] opacity-40 mt-2">
+              hold to talk {"\u00b7"} release to send
+            </div>
+          )}
+          <StatsStrip />
         </div>
-      </AppShell>
+
+        {/* Activity log */}
+        <ActivityLog entries={logEntries} />
+      </div>
 
       <ShareModal
         open={shareOpen}
@@ -327,6 +310,6 @@ export function PTTPage() {
         tokens={shareData.tokens}
         duration={shareData.duration}
       />
-    </>
+    </PageShell>
   );
 }
