@@ -31,6 +31,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .rec-btn:hover { border-color:var(--surface2); background:var(--surface0); color:var(--subtext); }
 .rec-btn.recording { border-color:var(--red); background:color-mix(in srgb,var(--red) 8%,var(--base)); color:var(--red); }
 .rec-btn.encoding { border-color:var(--yellow); color:var(--yellow); }
+.rec-btn.disabled { opacity:0.15; cursor:not-allowed; }
 .rec-btn .icon { font-size:1.6rem; }
 .rec-hint { text-align:center; font-size:0.65rem; color:var(--overlay); margin-bottom:16px; }
 .rec-status { text-align:center; font-size:0.75rem; color:var(--overlay); min-height:1.4em; margin-bottom:8px; }
@@ -111,7 +112,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
   <!-- RECORD -->
   <div class="panel active" id="panel-record">
     <div style="text-align:center">
-      <button class="rec-btn" id="rec-btn"
+      <button class="rec-btn disabled" id="rec-btn"
         onpointerdown="recDown(event)" onpointerup="recUp(event)" onpointerleave="recUp(event)">
         <span class="icon">🎙</span>
         <span>HOLD</span>
@@ -236,6 +237,7 @@ async function loadEncoder() {
     st.className = 'rec-status ok';
     st.textContent = 'Ready — hold to record';
     btn.style.display = 'none';
+    document.getElementById('rec-btn').classList.remove('disabled');
   } catch (e) {
     st.className = 'rec-status err';
     st.textContent = e.message;
@@ -247,7 +249,7 @@ async function loadEncoder() {
 let sp = null;
 function recDown(e) {
   e.preventDefault();
-  if (!encSess || isRec) return;
+  if (!encSess || !compSess || isRec) return;
   isRec = true; recChunks = [];
   const btn = document.getElementById('rec-btn');
   btn.classList.add('recording');
