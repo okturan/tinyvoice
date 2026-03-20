@@ -1,8 +1,8 @@
-# FocalCodec Walkie-Talkie
+# TinyVoice
 
-Voice chat over 576 bytes. A push-to-talk app that compresses 5.8 seconds of speech into 576 bytes using a 142M-parameter neural speech codec running entirely in your browser via WebAssembly.
+Voice chat over 576 bytes. A push-to-talk app that compresses speech into tiny packets using a neural speech codec running entirely in your browser via WebAssembly. Also generates scannable QR codes from voice messages.
 
-**[Try the live demo](https://focalcodec-walkie.pages.dev)**
+**[Live demo](https://focalcodec-walkie.pages.dev)** · **[Voice QR tool](https://focalcodec-walkie.pages.dev/qr.html)**
 
 ## How it works
 
@@ -10,99 +10,92 @@ Voice chat over 576 bytes. A push-to-talk app that compresses 5.8 seconds of spe
 Speaker's browser                          Listener's browser
 ┌──────────────────────┐                   ┌──────────────────────┐
 │ Mic → WavLM Encoder  │                   │  Vocos Decoder       │
-│    → Compressor      │  ── 576 bytes ──▸ │    → iSTFT (JS)      │
+│    → Compressor      │  ── 577 bytes ──▸ │    → iSTFT (JS)      │
 │    → Quantizer       │   (WebSocket)     │    → Speaker         │
 └──────────────────────┘                   └──────────────────────┘
       ONNX Runtime (WASM)                       ONNX Runtime (WASM)
 ```
 
 1. **Record** — hold the PTT button, speak
-2. **Encode** — FocalCodec encoder (142M params) runs in WASM, produces ~50 tokens/sec
-3. **Transmit** — 576 bytes sent via WebSocket to a Cloudflare Worker relay
-4. **Decode** — FocalCodec decoder (ONNX) + iSTFT (pure JavaScript) reconstructs audio
-5. **Play** — decoded audio plays on the listener's device
+2. **Encode** — shared WavLM encoder (88.7M params) + quality-specific compressor runs in WASM
+3. **Transmit** — magic byte + token data sent via WebSocket relay
+4. **Decode** — matching decoder + iSTFT (pure JavaScript) reconstructs audio
+5. **Play** — decoded audio plays instantly
 
-All neural network inference happens in the browser. The relay server only forwards raw bytes — it never sees or processes audio.
+All neural network inference happens in the browser. The relay server only forwards raw bytes.
 
-## Numbers
+## Pages
 
-| Metric | Value |
-|--------|-------|
-| Speech duration | 5.78 seconds |
-| Compressed size | 576 bytes |
-| Compression ratio | 5,123x |
-| Tokens | 288 (50 tokens/sec) |
-| Codebook | 8,192 entries (13-bit) |
-| Encode time | ~0.13s (warmed up, M1 GPU) |
-| Decode time | ~0.06s (warmed up, M1 GPU) |
-| Browser encode (WASM) | ~4s |
-| Browser decode (WASM) | ~4s |
-| Model size | 595 MB encoder + 135 MB decoder |
+| Page | Purpose |
+|------|---------|
+| `/` | PTT rooms — join a room, push-to-talk, hear others |
+| `/qr.html` | Voice QR — record, encode, generate QR code, decode from scan/drop |
+
+## Quality levels
+
+| Config | Rate | Bytes/5s | QR size | Use case |
+|--------|------|----------|---------|----------|
+| 50hz | 50 tok/s | 577 | Large | Best quality (PTT default) |
+| 25hz | 25 tok/s | 289 | Medium | Balanced |
+| 12.5hz | 12.5 tok/s | 145 | Tiny | QR codes, minimal bandwidth |
+
+## Wire format
+
+```
+[1 byte magic] [N × 2 bytes tokens (16-bit LE)]
+
+Magic: 0x01 = 50hz, 0x02 = 25hz, 0x03 = 12.5hz
+```
+
+Legacy links without a magic byte are supported — the decoder guesses quality from token count.
 
 ## Architecture
 
-### Frontend (`public/`)
+### Split encoder model
 
-Single-page app with no build step. Three files:
+The WavLM encoder (88.7M params, 595MB) is **shared** across all quality levels. Only the compressor and decoder differ per quality (~70-76MB + ~135-141MB each). This means:
 
-- **`index.html`** — app logic: ONNX model loading, IndexedDB caching, WebSocket, PTT recording, iSTFT implementation, theme system
-- **`themes.css`** — 6 color themes (Catppuccin Mocha/Frappe, Nord, Rose Pine, Solarized Dark, Catppuccin Latte)
-- **`app.css`** — layout and components
+- First quality download: ~800MB (encoder + one comp/dec pair)
+- Each additional quality: ~210MB
+- All three: ~1.2GB total
 
-The iSTFT (inverse Short-Time Fourier Transform) is implemented in pure JavaScript — a Cooley-Tukey radix-2 inverse FFT with overlap-add synthesis. This was necessary because the ONNX exporter can't handle PyTorch's `torch.fft.irfft` operation.
+Models are cached in **IndexedDB** — subsequent visits load from local storage in 1-2 seconds.
 
-### Relay Worker (`worker/`)
+### Files
 
-Cloudflare Worker with two Durable Objects:
+```
+public/
+├── index.html         Main PTT app (rooms, WebSocket, encode/decode)
+├── qr.html            Voice QR tool (record → QR, scan → decode)
+├── app.css            Layout and components
+├── themes.css         6 color themes
+├── shared.js          IndexedDB cache, iSTFT, utilities
+└── istft_window.json  Precomputed window for iSTFT synthesis
 
-- **Room** — WebSocket relay that forwards binary packets between connected users
-- **Lobby** — tracks active rooms and user counts for the room list
+worker/
+├── index.js           Cloudflare Worker (Room + Lobby Durable Objects)
+└── wrangler.toml      Worker config and DO migrations
+```
 
-The worker never inspects packet contents. It's a dumb pipe.
+### Services
 
-### ONNX Models
+| Service | URL |
+|---------|-----|
+| Frontend | Cloudflare Pages |
+| Relay | Cloudflare Workers (Durable Objects) |
+| Models | HuggingFace ([skymorphosis/focalcodec-onnx](https://huggingface.co/skymorphosis/focalcodec-onnx)) |
 
-Hosted on HuggingFace: [`skymorphosis/focalcodec-onnx`](https://huggingface.co/skymorphosis/focalcodec-onnx)
+### Themes
 
-The models are split for efficiency — the encoder (WavLM) is shared across all quality levels, only the compressor/decompressor differs:
-
-| File | Size | Component |
-|------|------|-----------|
-| `encoder.onnx` | 595 MB | WavLM encoder (shared) |
-| `compressor_50hz.onnx` | 70 MB | 50hz compressor + quantizer |
-| `compressor_25hz.onnx` | 74 MB | 25hz compressor + quantizer |
-| `compressor_12_5hz.onnx` | 76 MB | 12.5hz compressor + quantizer |
-| `decoder_50hz.onnx` | 135 MB | 50hz decompressor + Vocos decoder |
-| `decoder_25hz.onnx` | 139 MB | 25hz decompressor + Vocos decoder |
-| `decoder_12_5hz.onnx` | 141 MB | 12.5hz decompressor + Vocos decoder |
-
-Models are cached in IndexedDB after first download — subsequent visits load from local storage in ~1-2 seconds.
-
-### Quality Levels
-
-| Config | Token rate | Bytes per 5.8s | LoRa packets | Quality |
-|--------|-----------|----------------|--------------|---------|
-| 50hz | 50 tokens/sec | 576 | 3 | Best |
-| 25hz | 25 tokens/sec | 288 | 2 | Good |
-| 12.5hz | 12.5 tokens/sec | 144 | 1 | Acceptable |
-
-## Why this exists
-
-This started as an experiment to see if voice messaging is feasible over [LoRa mesh networks](https://meshtastic.org/) (like Meshtastic on LILYGO T-Echo devices). LoRa packets are limited to 237 bytes with strict duty cycle regulations.
-
-At 576 bytes (3 packets) or 144 bytes (1 packet), FocalCodec makes voice-over-LoRa possible.
-
-### Regulatory context (Turkey)
-
-Per BTK Tablo 1 Row 21: 869.4–869.65 MHz allows 500 mW ERP with 10% duty cycle. At SHORT_FAST preset, 3 LoRa packets take ~4.5 seconds to transmit — well within duty cycle limits.
+6 built-in themes: Catppuccin Mocha, Nord, Rose Pine, Solarized Dark, Midnight, Catppuccin Latte. Persisted in localStorage.
 
 ## Development
 
 ```bash
-# Serve frontend locally
+# Frontend
 cd public && python3 -m http.server 8787
 
-# Run worker locally
+# Worker (local)
 cd worker && wrangler dev --port 8788
 
 # Deploy frontend
@@ -112,18 +105,28 @@ wrangler pages deploy public --project-name focalcodec-walkie
 cd worker && wrangler deploy
 ```
 
-### Exporting ONNX models
+### ONNX model export
 
-The models were exported from [FocalCodec](https://github.com/lucadellalib/focalcodec) using PyTorch's ONNX exporter. The encoder requires the legacy tracer (`dynamo=False`) due to WavLM attention layer incompatibilities with the new FX-based exporter. The decoder is exported without the iSTFT layer, which is implemented in JavaScript instead.
+Models exported from [FocalCodec](https://github.com/lucadellalib/focalcodec):
 
-See the codec test scripts in the project's development history for export details.
+- **Encoder**: legacy tracer (`dynamo=False`, opset 14) due to WavLM attention incompatibility with FX exporter
+- **Compressors**: standard dynamo export (opset 18)
+- **Decoders**: exported without iSTFT layer — iSTFT is implemented in JavaScript (Cooley-Tukey radix-2 inverse FFT + overlap-add)
+
+## Origin
+
+Built as an experiment to test voice messaging over [LoRa mesh networks](https://meshtastic.org/) (Meshtastic on LILYGO T-Echo). LoRa packets max out at 237 bytes with strict duty cycle limits — FocalCodec makes voice-over-LoRa feasible at 145-577 bytes per message.
+
+### Regulatory note (Turkey)
+
+BTK Tablo 1 Row 21: 869.4–869.65 MHz, 500 mW ERP, 10% duty cycle. At SHORT_FAST preset, 3 LoRa packets transmit in ~4.5 seconds.
 
 ## Credits
 
-- **[FocalCodec](https://github.com/lucadellalib/focalcodec)** by Luca Della Libera — the neural speech codec (Apache 2.0)
-- **[ONNX Runtime Web](https://github.com/microsoft/onnxruntime)** — browser-based ML inference
+- **[FocalCodec](https://github.com/lucadellalib/focalcodec)** — Luca Della Libera (Apache 2.0)
+- **[ONNX Runtime Web](https://github.com/microsoft/onnxruntime)** — Microsoft
 - **[Cloudflare Workers](https://workers.cloudflare.com/)** — WebSocket relay
-- **[Meshtastic](https://meshtastic.org/)** — the LoRa mesh network that inspired this project
+- **[Meshtastic](https://meshtastic.org/)** — LoRa mesh inspiration
 
 ## License
 
