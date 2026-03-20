@@ -6,7 +6,7 @@ import QualityPicker from "./QualityPicker";
 import QRResult from "./QRResult";
 import HexSheet from "./HexSheet";
 import { codec } from "@/lib/codec-service";
-import { isCached } from "@/lib/model-cache";
+import { areCached } from "@/lib/model-cache";
 import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
@@ -50,10 +50,11 @@ export default function RecordPanel() {
   // Check which models are cached when quality changes
   useEffect(() => {
     if (modelsLoaded) return;
-    Promise.all([
-      isCached("encoder.onnx"),
-      isCached(`compressor_${quality}.onnx`),
-    ]).then(([enc, comp]) => {
+    const encKey = "encoder.onnx";
+    const compKey = `compressor_${quality}.onnx`;
+    areCached([encKey, compKey]).then((results) => {
+      const enc = results[encKey];
+      const comp = results[compKey];
       if (enc && comp) {
         setCacheState("all");
         setStatus("Ready to initialize");

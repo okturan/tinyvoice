@@ -5,7 +5,7 @@
 
 import { SR } from "@/lib/constants";
 import { loadModel } from "@/lib/model-loader";
-import { isCached } from "@/lib/model-cache";
+import { areCached } from "@/lib/model-cache";
 import { istft } from "@/lib/istft";
 import {
   Quality,
@@ -227,12 +227,13 @@ class CodecService {
     quality: Quality = Quality.Hz50,
   ): Promise<boolean> {
     try {
-      const [enc, comp, dec] = await Promise.all([
-        isCached("encoder.onnx"),
-        isCached(`compressor_${quality}.onnx`),
-        isCached(`decoder_${quality}.onnx`),
-      ]);
-      return enc && comp && dec;
+      const keys = [
+        "encoder.onnx",
+        `compressor_${quality}.onnx`,
+        `decoder_${quality}.onnx`,
+      ];
+      const results = await areCached(keys);
+      return keys.every((k) => results[k]);
     } catch {
       return false;
     }
