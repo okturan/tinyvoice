@@ -73,7 +73,7 @@ export async function loadDecoder(
 
 async function ensureIstftWindow(): Promise<Float32Array> {
   if (istftWin) return istftWin;
-  const resp = await fetch(MODEL_BASE + "istft_window.json");
+  const resp = await fetch("/istft_window.json");
   istftWin = new Float32Array(await resp.json());
   return istftWin;
 }

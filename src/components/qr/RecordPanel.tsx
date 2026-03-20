@@ -6,6 +6,7 @@ import QRResult from "./QRResult";
 import HexSidebar from "./HexSidebar";
 import { loadEncoder, loadCompressor, encode } from "@/lib/codec";
 import { SR, type Quality } from "@/lib/constants";
+import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
 
 type RecordState = "idle" | "recording" | "encoding";
 
@@ -31,7 +32,8 @@ export default function RecordPanel() {
   // Recording refs
   const micRef = useRef<MediaStream | null>(null);
   const actxRef = useRef<AudioContext | null>(null);
-  const spRef = useRef<ScriptProcessorNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const chunksRef = useRef<Float32Array[]>([]);
   const isRecRef = useRef(false);
@@ -40,6 +42,7 @@ export default function RecordPanel() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [recTime, setRecTime] = useState("0.0s");
   const recStartRef = useRef(0);
+  const workletRegisteredRef = useRef(false);
 
   // Waveform drawing
   const drawWaveform = useCallback(() => {
@@ -104,7 +107,7 @@ export default function RecordPanel() {
   }, [quality]);
 
   const recDown = useCallback(
-    (e: React.PointerEvent) => {
+    async (e: React.PointerEvent) => {
       e.preventDefault();
       if (!modelsLoaded || isRecRef.current) return;
 
@@ -115,24 +118,37 @@ export default function RecordPanel() {
       setStatusType("");
 
       const actx = actxRef.current!;
+      if (actx.state === "suspended") await actx.resume();
+
+      // Register worklet (only once per AudioContext)
+      if (!workletRegisteredRef.current) {
+        const url = getWorkletUrl();
+        await actx.audioWorklet.addModule(url);
+        workletRegisteredRef.current = true;
+      }
+
       const mic = micRef.current!;
-      const mediaSource = actx.createMediaStreamSource(mic);
-      const sp = actx.createScriptProcessor(4096, 1, 1);
-      sp.onaudioprocess = (ev) => {
-        if (isRecRef.current) {
-          chunksRef.current.push(
-            new Float32Array(ev.inputBuffer.getChannelData(0)),
-          );
+      const source = actx.createMediaStreamSource(mic);
+      mediaSourceRef.current = source;
+
+      const worklet = new AudioWorkletNode(actx, "recorder-processor");
+      workletNodeRef.current = worklet;
+      worklet.port.onmessage = (ev: MessageEvent) => {
+        if (ev.data.type === "samples") {
+          chunksRef.current.push(new Float32Array(ev.data.data));
         }
       };
-      mediaSource.connect(sp);
-      sp.connect(actx.destination);
-      spRef.current = sp;
+
+      source.connect(worklet);
+      worklet.connect(actx.destination);
+
+      // Start recording
+      worklet.port.postMessage({ type: "start" });
 
       // Waveform + timer
       const analyser = actx.createAnalyser();
       analyser.fftSize = 256;
-      mediaSource.connect(analyser);
+      source.connect(analyser);
       analyserRef.current = analyser;
       recStartRef.current = Date.now();
       setRecTime("0.0s");
@@ -161,10 +177,21 @@ export default function RecordPanel() {
         cancelAnimationFrame(waveRafRef.current);
         waveRafRef.current = null;
       }
-      if (spRef.current) {
-        spRef.current.disconnect();
-        spRef.current = null;
+
+      // Stop and disconnect worklet
+      if (workletNodeRef.current) {
+        workletNodeRef.current.port.postMessage({ type: "stop" });
+        workletNodeRef.current.disconnect();
+        workletNodeRef.current = null;
       }
+
+      // Disconnect source
+      if (mediaSourceRef.current) {
+        mediaSourceRef.current.disconnect();
+        mediaSourceRef.current = null;
+      }
+
+      analyserRef.current = null;
 
       setRecordState("encoding");
 
@@ -238,7 +265,11 @@ export default function RecordPanel() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (waveRafRef.current) cancelAnimationFrame(waveRafRef.current);
-      if (spRef.current) spRef.current.disconnect();
+      if (workletNodeRef.current) {
+        workletNodeRef.current.port.postMessage({ type: "stop" });
+        workletNodeRef.current.disconnect();
+      }
+      if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
     };
   }, []);
 
