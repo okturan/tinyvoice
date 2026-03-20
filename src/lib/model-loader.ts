@@ -1,74 +1,58 @@
-/**
- * Download ONNX models with IndexedDB caching and progress reporting.
- */
+import { MODEL_BASE } from "@/lib/constants";
+import { getCached, setCache, delCache } from "@/lib/model-cache";
 
-import { MODEL_BASE } from "./constants";
-import { getCached, setCache, delCache } from "./model-cache";
+export interface ModelLoadProgress {
+  /** 0..1 */
+  progress: number;
+  status: string;
+}
 
-/** Progress callback: value from 0 to 1 */
-export type ProgressCallback = (progress: number) => void;
-
-/** Status callback: human-readable string for UI display */
-export type StatusCallback = (status: string) => void;
-
-/** Minimum valid model size (1 MB). Anything smaller is treated as corrupt. */
-const MIN_MODEL_SIZE = 1048576;
-
-/** Bytes per megabyte */
-const BYTES_PER_MB = 1048576;
-
-/**
- * Load a model by name. Checks IndexedDB cache first, then downloads
- * from HuggingFace with streaming progress.
- *
- * @param name - Model filename (e.g. "encoder.onnx")
- * @param onProgress - Called with 0..1 as download progresses
- * @param onStatus - Called with status text for UI display
- * @returns ArrayBuffer of the model data
- */
 export async function loadModel(
   name: string,
-  onProgress: ProgressCallback,
-  onStatus?: StatusCallback,
+  onProgress: (info: ModelLoadProgress) => void
 ): Promise<ArrayBuffer> {
-  // Check cache
+  // Check IndexedDB cache first
   const cached = await getCached(name);
-  if (cached && cached.byteLength > MIN_MODEL_SIZE) {
-    onStatus?.(
-      `${name} (cached, ${(cached.byteLength / BYTES_PER_MB).toFixed(0)} MB)`,
-    );
-    onProgress(1);
+  if (cached && cached.byteLength > 1048576) {
+    onProgress({
+      progress: 1,
+      status: `${name} (cached, ${(cached.byteLength / 1048576).toFixed(0)} MB)`,
+    });
     return cached;
   }
   if (cached) {
-    onStatus?.(`${name} cache corrupt, re-downloading`);
+    onProgress({
+      progress: 0,
+      status: `${name} cache corrupt, re-downloading`,
+    });
     await delCache(name);
   }
 
   // Download from HuggingFace
-  onStatus?.(`Downloading ${name}...`);
-  const resp = await fetch(MODEL_BASE + name);
-  const total = +(resp.headers.get("Content-Length") ?? 0);
-  const totalMB = total ? (total / BYTES_PER_MB).toFixed(0) + " MB" : "?";
-  const t0 = performance.now();
+  const url = MODEL_BASE + name;
+  const resp = await fetch(url);
+  const total = +(resp.headers.get("Content-Length") ?? "0");
+  const totalMB = total ? (total / 1048576).toFixed(0) + " MB" : "?";
+  onProgress({ progress: 0, status: `Downloading ${name} (${totalMB})...` });
+
   const reader = resp.body!.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
+  const t0 = performance.now();
 
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
     received += value.length;
-    if (total) onProgress(received / total);
+    const frac = total ? received / total : 0;
+    const mb = (received / 1048576).toFixed(1);
     const elapsed = (performance.now() - t0) / 1000;
-    const speed =
-      elapsed > 0.5
-        ? (received / BYTES_PER_MB / elapsed).toFixed(1)
-        : "\u2014";
-    onStatus?.(
-      `${(received / BYTES_PER_MB).toFixed(1)} / ${totalMB} \u00b7 ${speed} MB/s`,
-    );
+    const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : "\u2014";
+    onProgress({
+      progress: frac,
+      status: `${mb} / ${totalMB} \u00b7 ${speed} MB/s`,
+    });
   }
 
   const result = new Uint8Array(received);
@@ -78,11 +62,11 @@ export async function loadModel(
     offset += chunk.length;
   }
 
-  // Cache for next time (best-effort)
+  // Cache in IndexedDB
   try {
     await setCache(name, result.buffer);
   } catch {
-    // Cache write failed — not fatal
+    // cache failure is non-fatal
   }
 
   return result.buffer;
