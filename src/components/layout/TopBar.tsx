@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { SettingsSheet } from "@/components/layout/SettingsSheet";
 
 export function TopBar() {
@@ -55,8 +54,6 @@ export function TopBar() {
           <Settings className="size-4" />
         </Button>
 
-        {/* Far right: Theme dots */}
-        <ThemeSwitcher />
       </div>
 
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
