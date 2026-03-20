@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="mocha">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocalCodec Walkie-Talkie</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="themes.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="hdr">
+    <h1>FocalCodec</h1>
+    <span class="badge">WALKIE-TALKIE</span>
+    <span class="spacer"></span>
+    <div class="hdr-stats">
+      <span>sent <b id="total-sent">0 B</b></span>
+      <span>recv <b id="total-recv">0 B</b></span>
+      <span>users <b id="user-count">0</b></span>
+    </div>
+    <div class="themes" id="theme-btns"></div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="side">
+    <div class="sec">
+      <div class="sec-title">You</div>
+      <div class="row">
+        <input type="text" id="username" spellcheck="false" placeholder="your name">
+      </div>
+    </div>
+
+    <div class="sec room-sec">
+      <div class="sec-title">Room</div>
+      <!-- Lobby -->
+      <div id="room-lobby">
+        <input type="text" id="room-name" value="odin" spellcheck="false"
+               placeholder="room name" autocomplete="off">
+        <div class="room-create-row">
+          <button class="room-create-btn" onclick="toggleConnect()">Create Room</button>
+          <button class="room-shuffle-btn" onclick="shuffleRoom()" title="Random name">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/>
+              <path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+          </button>
+        </div>
+        <div class="room-sep"></div>
+        <div class="room-join-hdr" id="room-list-hdr">Join a room</div>
+        <div class="room-list" id="room-list"></div>
+      </div>
+      <!-- Connected -->
+      <div id="room-active" class="hidden">
+        <div class="room-card" id="room-card">
+          <div class="room-beacon">
+            <div class="beacon-ring"></div>
+            <div class="beacon-core"></div>
+          </div>
+          <div class="room-card-body">
+            <div class="room-card-name" id="active-name"></div>
+            <div class="room-card-meta" id="active-meta">Connecting...</div>
+          </div>
+        </div>
+        <button class="room-leave" onclick="toggleConnect()">Leave Room</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Codec</div>
+      <div class="status" style="margin-top:0">
+        <div class="dot" id="model-dot"></div>
+        <span id="model-status">Not loaded</span>
+      </div>
+      <button class="btn btn-full" id="btn-load" onclick="loadModels()">Load Models</button>
+      <button class="btn btn-full btn-dim" onclick="clearModelCache()">Clear Cache</button>
+      <div class="prog"><div class="prog-fill" id="load-progress"></div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-title">Pipeline</div>
+      <div class="pipe">
+        mic <span class="dm">&rarr;</span> encoder <span class="dm">(142M)</span><br>
+        <span class="dm">&rarr;</span> <span class="hi">576 bytes</span> <span class="dm">&rarr;</span> relay<br>
+        <span class="dm">&rarr;</span> decoder <span class="dm">&rarr;</span> iSTFT <span class="dm">&rarr;</span> speaker
+        <hr>
+        <span class="hi">5,123x</span> compression<br>
+        all inference in-browser
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="ptt">
+      <button class="ptt-btn disabled" id="ptt-btn"
+        onpointerdown="pttDown(event)" onpointerup="pttUp(event)" onpointerleave="pttUp(event)">
+        <span class="icon">🎙</span>
+        <span>HOLD</span>
+      </button>
+      <div class="ptt-hint">hold to talk &middot; release to send</div>
+      <div class="stat-row">
+        <div class="stat"><div class="stat-val" id="stat-bytes">&mdash;</div><div class="stat-lbl">bytes sent</div></div>
+        <div class="stat"><div class="stat-val" id="stat-encode">&mdash;</div><div class="stat-lbl">encode</div></div>
+        <div class="stat"><div class="stat-val" id="stat-recv">&mdash;</div><div class="stat-lbl">bytes recv</div></div>
+        <div class="stat"><div class="stat-val" id="stat-decode">&mdash;</div><div class="stat-lbl">decode</div></div>
+      </div>
+    </div>
+    <div class="log-wrap"><div class="log" id="log"></div></div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════
+   Themes
+   ══════════════════════════════════════════════════════ */
+const THEMES = [
+  { id:'mocha',     label:'Mocha',     swatch:'#89b4fa' },
+  { id:'nord',      label:'Nord',      swatch:'#5e81ac' },
+  { id:'rosepine',  label:'Rose Pine', swatch:'#c4a7e7' },
+  { id:'solarized', label:'Solarized', swatch:'#2aa198' },
+  { id:'midnight',  label:'Midnight',  swatch:'#1c1c26' },
+  { id:'latte',     label:'Latte',     swatch:'#dd7878' },
+];
+const themeBtns = document.getElementById('theme-btns');
+THEMES.forEach(t => {
+  const b = document.createElement('button');
+  b.style.background = t.swatch;
+  b.title = t.label;
+  b.dataset.t = t.id;
+  b.onclick = () => setTheme(t.id);
+  themeBtns.appendChild(b);
+});
+function setTheme(id) {
+  document.documentElement.dataset.theme = id;
+  themeBtns.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.t === id));
+  localStorage.setItem('fc-theme', id);
+}
+setTheme(localStorage.getItem('fc-theme') || 'mocha');
+
+/* ══════════════════════════════════════════════════════
+   Random names
+   ══════════════════════════════════════════════════════ */
+const ADJECTIVES = ['swift','bold','quiet','bright','dark','warm','cool','wild','calm','keen'];
+const NOUNS = ['raven','wolf','fox','hawk','bear','lynx','owl','deer','crane','seal'];
+function randomName() {
+  const a = ADJECTIVES[Math.floor(Math.random()*ADJECTIVES.length)];
+  const n = NOUNS[Math.floor(Math.random()*NOUNS.length)];
+  return a + '-' + n;
+}
+const nameInput = document.getElementById('username');
+nameInput.value = localStorage.getItem('fc-username') || randomName();
+nameInput.addEventListener('change', () => localStorage.setItem('fc-username', nameInput.value));
+
+/* ══════════════════════════════════════════════════════
+   Room Management
+   ══════════════════════════════════════════════════════ */
+const ROOM_ADJ = ['hidden','golden','iron','silver','frost','storm','shadow','ember','crystal','silent'];
+const ROOM_NOUN = ['hall','bridge','forge','tower','grove','vale','peak','gate','den','keep'];
+function randomRoomName() {
+  return ROOM_ADJ[Math.random()*ROOM_ADJ.length|0] + '-' + ROOM_NOUN[Math.random()*ROOM_NOUN.length|0];
+}
+function shuffleRoom() {
+  const inp = document.getElementById('room-name');
+  inp.value = randomRoomName();
+  inp.focus();
+}
+
+function getRecent() {
+  try { return JSON.parse(localStorage.getItem('fc-rooms')||'[]'); } catch { return []; }
+}
+function addRecent(name) {
+  let r = getRecent().filter(x => x !== name);
+  r.unshift(name);
+  localStorage.setItem('fc-rooms', JSON.stringify(r.slice(0, 6)));
+}
+
+const SUGGESTED = ['odin','valhalla','bifrost','midgard','asgard'];
+
+function renderRoomItem(container, name, count) {
+  const item = document.createElement('div');
+  item.className = 'room-item';
+  item.onclick = () => toggleConnect(name);
+  const dot = document.createElement('span');
+  dot.className = count ? 'room-item-dot on' : 'room-item-dot';
+  const label = document.createElement('span');
+  label.className = 'room-item-name';
+  label.textContent = name;
+  const joinTag = document.createElement('span');
+  joinTag.className = 'room-item-join';
+  joinTag.textContent = 'Join';
+  item.appendChild(dot);
+  item.appendChild(label);
+  if (count) {
+    const badge = document.createElement('span');
+    badge.className = 'room-item-count';
+    badge.textContent = count;
+    item.appendChild(badge);
+  }
+  item.appendChild(joinTag);
+  container.appendChild(item);
+}
+
+let roomPoll = null, liveRooms = [];
+function updateCreateBtn() {
+  const btn = document.querySelector('.room-create-btn');
+  if (!btn) return;
+  const name = document.getElementById('room-name').value.trim();
+  const known = [...liveRooms.map(r => r.name), ...getRecent(), ...SUGGESTED];
+  btn.textContent = known.includes(name) ? 'Join Room' : 'Create Room';
+}
+async function fetchRooms() {
+  try {
+    const res = await fetch(RELAY_HTTP + '/rooms');
+    const active = await res.json();
+    liveRooms = active;
+    renderRooms(active);
+    updateCreateBtn();
+  } catch (e) {
+    liveRooms = [];
+    renderRooms([]);
+  }
+}
+function renderRooms(active) {
+  const el = document.getElementById('room-list');
+  const hdr = document.getElementById('room-list-hdr');
+  const recent = getRecent();
+  el.innerHTML = '';
+  if (active.length) {
+    hdr.textContent = 'Live rooms';
+    active.forEach(r => renderRoomItem(el, r.name, r.count));
+    return;
+  }
+  if (recent.length) {
+    hdr.textContent = 'Recent rooms';
+    recent.forEach(name => renderRoomItem(el, name));
+    return;
+  }
+  hdr.textContent = 'Suggested rooms';
+  SUGGESTED.forEach(name => renderRoomItem(el, name));
+}
+function startRoomPoll() { fetchRooms(); roomPoll = setInterval(fetchRooms, 4000); }
+function stopRoomPoll() { if (roomPoll) { clearInterval(roomPoll); roomPoll = null; } }
+
+function showRoomState(state, roomName) {
+  const lobby = document.getElementById('room-lobby');
+  const active = document.getElementById('room-active');
+  const card = document.getElementById('room-card');
+  if (state === 'lobby') {
+    active.classList.add('hidden');
+    lobby.classList.remove('hidden');
+    startRoomPoll();
+  } else {
+    stopRoomPoll();
+    lobby.classList.add('hidden');
+    active.classList.remove('hidden');
+    active.classList.remove('room-enter');
+    void active.offsetWidth;
+    active.classList.add('room-enter');
+    document.getElementById('active-name').textContent = roomName;
+    if (state === 'connecting') {
+      card.classList.add('connecting');
+      document.getElementById('active-meta').textContent = 'Connecting\u2026';
+    } else {
+      card.classList.remove('connecting');
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   Config & State
+   ══════════════════════════════════════════════════════ */
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 640;
+const RELAY_HTTP = location.hostname === 'localhost'
+  ? 'http://localhost:8787' : 'https://focalcodec-relay.okan.workers.dev';
+const WORKER_URL = location.hostname === 'localhost'
+  ? 'ws://localhost:8787/ws/' : 'wss://focalcodec-relay.okan.workers.dev/ws/';
+const SR = 16000, NFFT = 1024, HOP = 320, WLEN = 1024, PAD = 352;
+
+// Init room
+const roomInput = document.getElementById('room-name');
+const _lastRoom = getRecent()[0];
+if (_lastRoom) roomInput.value = _lastRoom;
+roomInput.addEventListener('input', updateCreateBtn);
+startRoomPoll();
+
+let ws = null, encSess = null, decSess = null, istftWin = null;
+let mic = null, actx = null, playCtx = null, isRec = false, chunks = [];
+let totalSent = 0, totalRecv = 0;
+let modelsLoaded = false;
+
+/* ══════════════════════════════════════════════════════
+   IndexedDB Model Cache
+   ══════════════════════════════════════════════════════ */
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('focalcodec-models', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('models');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function getCached(key) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('models', 'readonly');
+    const req = tx.objectStore('models').get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => resolve(null);
+  });
+}
+async function setCache(key, data) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('models', 'readwrite');
+    tx.objectStore('models').put(data, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+async function delCache(key) {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('models', 'readwrite');
+    tx.objectStore('models').delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+async function clearModelCache() {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction('models', 'readwrite');
+    tx.objectStore('models').clear();
+    tx.oncomplete = () => { log('Cache cleared', 'ok'); resolve(); };
+    tx.onerror = () => resolve();
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   Utils
+   ══════════════════════════════════════════════════════ */
+const logEl = document.getElementById('log');
+function log(m, c='') {
+  const l = document.createElement('div');
+  l.className = c;
+  l.textContent = m;
+  logEl.appendChild(l);
+  if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function fmt(b) { return b < 1024 ? b + ' B' : (b/1024).toFixed(1) + ' KB'; }
+function updNet() {
+  document.getElementById('total-sent').textContent = fmt(totalSent);
+  document.getElementById('total-recv').textContent = fmt(totalRecv);
+}
+function logHex(data, type) {
+  const entry = document.createElement('div');
+  entry.className = 'hex-entry hex-' + type;
+  const hdr = document.createElement('div');
+  hdr.className = 'hex-hdr';
+  hdr.onclick = () => entry.classList.toggle('open');
+  const arrow = document.createElement('span');
+  arrow.className = 'hex-arrow';
+  arrow.textContent = '\u25b8';
+  const label = document.createElement('span');
+  label.className = type === 'sent' ? 'ok' : 'recv';
+  label.textContent = fmt(data.length) + ' \u2014 raw token data';
+  hdr.appendChild(arrow);
+  hdr.appendChild(label);
+  const body = document.createElement('div');
+  body.className = 'hex-body';
+  const grid = document.createElement('div');
+  grid.className = 'hex-grid';
+  const parts = [];
+  for (let i = 0; i < data.length; i++) {
+    parts.push('<span class="hx">' + data[i].toString(16).padStart(2, '0') + '</span>');
+  }
+  grid.innerHTML = parts.join('');
+  body.appendChild(grid);
+  entry.appendChild(hdr);
+  entry.appendChild(body);
+  logEl.appendChild(entry);
+  if (logEl.children.length > 200) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ══════════════════════════════════════════════════════
+   iSTFT (JS implementation)
+   ══════════════════════════════════════════════════════ */
+function irfft(re, im, n) {
+  const fR = new Float32Array(n), fI = new Float32Array(n);
+  const h = re.length;
+  for (let i = 0; i < h; i++) { fR[i] = re[i]; fI[i] = im[i]; }
+  for (let i = h; i < n; i++) { fR[i] = fR[n-i]; fI[i] = -fI[n-i]; }
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    if (i < j) { [fR[i],fR[j]] = [fR[j],fR[i]]; [fI[i],fI[j]] = [fI[j],fI[i]]; }
+    let m = n >> 1; while (m >= 1 && j >= m) { j -= m; m >>= 1; } j += m;
+  }
+  for (let s = 2; s <= n; s *= 2) {
+    const hs = s/2, a = 2 * Math.PI / s;
+    for (let i = 0; i < n; i += s)
+      for (let k = 0; k < hs; k++) {
+        const c = Math.cos(a*k), sn = Math.sin(a*k);
+        const tR = c*fR[i+hs+k] - sn*fI[i+hs+k];
+        const tI = sn*fR[i+hs+k] + c*fI[i+hs+k];
+        fR[i+hs+k] = fR[i+k] - tR; fI[i+hs+k] = fI[i+k] - tI;
+        fR[i+k] += tR; fI[i+k] += tI;
+      }
+  }
+  const o = new Float32Array(n);
+  for (let i = 0; i < n; i++) o[i] = fR[i] / n;
+  return o;
+}
+
+function istft(mag, ph) {
+  const hN = NFFT/2+1, T = mag.length / hN;
+  const oS = (T-1) * HOP + WLEN;
+  const o = new Float32Array(oS), wE = new Float32Array(oS);
+  for (let t = 0; t < T; t++) {
+    const off = t * hN;
+    const r = new Float32Array(hN), im = new Float32Array(hN);
+    for (let f = 0; f < hN; f++) {
+      r[f] = mag[off+f] * Math.cos(ph[off+f]);
+      im[f] = mag[off+f] * Math.sin(ph[off+f]);
+    }
+    const fr = irfft(r, im, NFFT);
+    const st = t * HOP;
+    for (let i = 0; i < WLEN; i++) {
+      o[st+i] += fr[i] * istftWin[i];
+      wE[st+i] += istftWin[i] * istftWin[i];
+    }
+  }
+  for (let i = 0; i < oS; i++) if (wE[i] > 1e-8) o[i] /= wE[i];
+  return o.slice(PAD, oS - PAD);
+}
+
+/* ══════════════════════════════════════════════════════
+   WebSocket
+   ══════════════════════════════════════════════════════ */
+function cleanupWs() {
+  if (ws) { ws.onclose = null; ws.onerror = null; ws.onmessage = null; try { ws.close(); } catch(e) {} ws = null; }
+}
+function toggleConnect(roomOverride) {
+  // If active panel is showing, leave the room
+  if (!document.getElementById('room-active').classList.contains('hidden')) {
+    cleanupWs();
+    showRoomState('lobby');
+    document.getElementById('user-count').textContent = '0';
+    log('Left room', 'dim');
+    updatePTT();
+    return;
+  }
+  cleanupWs();
+  const room = roomOverride || document.getElementById('room-name').value.trim() || 'default';
+  log(`Joining "${room}"...`, 'info');
+  showRoomState('connecting', room);
+
+  ws = new WebSocket(WORKER_URL + encodeURIComponent(room));
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    showRoomState('connected', room);
+    document.getElementById('active-meta').textContent = '1 connected';
+    addRecent(room);
+    log(`Joined "${room}"`, 'ok');
+    updatePTT();
+  };
+  ws.onmessage = async (e) => {
+    if (typeof e.data === 'string') {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'users') {
+        document.getElementById('user-count').textContent = msg.count;
+        document.getElementById('active-meta').textContent = msg.count + ' connected';
+        log(`${msg.count} user(s) in room`, 'dim');
+      }
+      return;
+    }
+    await decode(new Uint8Array(e.data));
+  };
+  ws.onclose = () => {
+    showRoomState('lobby');
+    document.getElementById('user-count').textContent = '0';
+    updatePTT();
+  };
+  ws.onerror = () => {
+    log('Connection error', 'warn');
+  };
+}
+
+/* ══════════════════════════════════════════════════════
+   Model Loading (with IndexedDB cache)
+   ══════════════════════════════════════════════════════ */
+async function loadModels() {
+  const dot = document.getElementById('model-dot');
+  const st = document.getElementById('model-status');
+  const pr = document.getElementById('load-progress');
+  const btn = document.getElementById('btn-load');
+  dot.className = 'dot loading'; btn.disabled = true;
+
+  try {
+    // iSTFT window
+    st.textContent = 'iSTFT...';
+    const wr = await fetch(MODEL_BASE + 'istft_window.json');
+    istftWin = new Float32Array(await wr.json());
+    log('iSTFT window loaded', 'ok');
+
+    // Decoder
+    st.textContent = 'Decoder...';
+    log('Loading decoder...', 'info');
+    const decName = IS_MOBILE ? 'decoder_fp16.onnx' : 'decoder.onnx';
+    const encName = IS_MOBILE ? 'encoder_50hz_fp16.onnx' : 'encoder_50hz.onnx';
+    if (IS_MOBILE) log('Using fp16 models (mobile)', 'dim');
+
+    const decBuf = await loadModel(decName, p => { pr.style.width = (p*20)+'%'; });
+    decSess = await ort.InferenceSession.create(decBuf, { executionProviders: ['wasm'] });
+    log('Decoder ready', 'ok');
+    pr.style.width = '20%';
+
+    // Encoder
+    st.textContent = 'Encoder...';
+    log('Loading encoder...', 'info');
+    const encBuf = await loadModel(encName, p => { pr.style.width = (20+p*70)+'%'; });
+    encSess = await ort.InferenceSession.create(encBuf, { executionProviders: ['wasm'] });
+    log('Encoder ready', 'ok');
+    pr.style.width = '95%';
+
+    // Mic
+    st.textContent = 'Mic...';
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: SR, channelCount: 1 }});
+    actx = new AudioContext({ sampleRate: SR });
+    playCtx = new AudioContext({ sampleRate: SR });
+    log('Microphone ready', 'ok');
+
+    pr.style.width = '100%';
+    dot.className = 'dot on';
+    st.textContent = 'Ready';
+    modelsLoaded = true;
+    btn.textContent = 'Models Loaded';
+    log('Push to talk!', 'ok');
+    updatePTT();
+  } catch (e) {
+    dot.className = 'dot err';
+    st.textContent = 'Error';
+    log(e.message, 'warn');
+    if (e.message && e.message.includes('protobuf')) {
+      log('Corrupted cache detected — clearing...', 'warn');
+      await clearModelCache();
+      log('Hit "Load Models" again to re-download', 'info');
+    }
+    console.error(e);
+  }
+  if (!modelsLoaded) btn.disabled = false;
+}
+
+const MODEL_BASE = 'https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
+
+async function loadModel(name, onProgress) {
+  // Check IndexedDB cache first
+  const cached = await getCached(name);
+  if (cached && cached.byteLength > 1048576) {
+    log(`  ${name} loaded from cache (${(cached.byteLength/1048576).toFixed(0)} MB)`, 'dim');
+    onProgress(1);
+    return cached;
+  }
+  if (cached) {
+    log(`  ${name} cache corrupt (${cached.byteLength} B), re-downloading`, 'warn');
+    await delCache(name);
+  }
+
+  // Download from HuggingFace
+  const url = MODEL_BASE + name;
+  const resp = await fetch(url);
+  const total = +resp.headers.get('Content-Length') || 0;
+  const totalMB = total ? (total / 1048576).toFixed(0) + ' MB' : '?';
+  log(`  Downloading ${name} (${totalMB})...`, 'dim');
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let received = 0;
+  const t0 = performance.now();
+  const st = document.getElementById('model-status');
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (total) onProgress(received / total);
+    const mb = (received / 1048576).toFixed(1);
+    const elapsed = (performance.now() - t0) / 1000;
+    const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : '—';
+    st.textContent = `${mb} / ${totalMB} · ${speed} MB/s`;
+  }
+  const result = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+
+  // Cache in IndexedDB
+  try {
+    await setCache(name, result.buffer);
+    log(`  ${name} cached for next time`, 'dim');
+  } catch (e) {
+    log(`  Cache failed: ${e.message}`, 'dim');
+  }
+
+  return result.buffer;
+}
+
+/* ══════════════════════════════════════════════════════
+   Push-to-Talk
+   ══════════════════════════════════════════════════════ */
+function updatePTT() {
+  const ready = encSess && decSess && ws && ws.readyState === 1;
+  document.getElementById('ptt-btn').classList.toggle('disabled', !ready);
+}
+
+let sp = null;
+function pttDown(e) {
+  e.preventDefault();
+  const b = document.getElementById('ptt-btn');
+  if (b.classList.contains('disabled') || isRec) return;
+  isRec = true; chunks = [];
+  b.classList.add('recording');
+
+  const src = actx.createMediaStreamSource(mic);
+  sp = actx.createScriptProcessor(4096, 1, 1);
+  sp.onaudioprocess = (ev) => {
+    if (isRec) chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+  };
+  src.connect(sp);
+  sp.connect(actx.destination);
+  log('Recording...', 'warn');
+}
+
+async function pttUp(e) {
+  if (e) e.preventDefault();
+  if (!isRec) return;
+  isRec = false;
+
+  const b = document.getElementById('ptt-btn');
+  b.classList.remove('recording');
+  b.classList.add('sending');
+  if (sp) { sp.disconnect(); sp = null; }
+
+  const tl = chunks.reduce((s, c) => s + c.length, 0);
+  if (tl < SR * 0.15) {
+    log('Too short, skipped', 'dim');
+    b.classList.remove('sending');
+    return;
+  }
+  const audio = new Float32Array(tl);
+  let off = 0;
+  for (const c of chunks) { audio.set(c, off); off += c.length; }
+
+  const dur = (tl / SR).toFixed(1);
+  log(`${dur}s recorded (${tl} samples)`, 'info');
+
+  try {
+    const t0 = performance.now();
+    const r = await encSess.run({ audio: new ort.Tensor('float32', audio, [1, tl]) });
+    const tok = r.tokens.data;
+    const t1 = performance.now();
+
+    const encTime = ((t1-t0)/1000).toFixed(2);
+    log(`Encoded ${encTime}s -> ${tok.length} tokens`, 'ok');
+    document.getElementById('stat-encode').textContent = encTime + 's';
+
+    // Pack as 16-bit LE
+    const pk = new Uint8Array(tok.length * 2);
+    const dv = new DataView(pk.buffer);
+    for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
+
+    document.getElementById('stat-bytes').textContent = fmt(pk.length);
+    document.getElementById('stat-bytes').className = 'stat-val green';
+    totalSent += pk.length;
+    updNet();
+
+    if (ws && ws.readyState === 1) {
+      ws.send(pk.buffer);
+      log(`Sent ${fmt(pk.length)}`, 'ok');
+      logHex(pk, 'sent');
+    }
+  } catch (e) {
+    log('Encode: ' + e.message, 'warn');
+    console.error(e);
+  }
+  b.classList.remove('sending');
+}
+
+/* ══════════════════════════════════════════════════════
+   Decode incoming
+   ══════════════════════════════════════════════════════ */
+async function decode(data) {
+  totalRecv += data.length;
+  updNet();
+  document.getElementById('stat-recv').textContent = fmt(data.length);
+  document.getElementById('stat-recv').className = 'stat-val blue';
+  log(`Received ${fmt(data.length)}`, 'recv');
+  logHex(data, 'recv');
+
+  try {
+    const n = data.length / 2;
+    const tok = new BigInt64Array(n);
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    for (let i = 0; i < n; i++) tok[i] = BigInt(dv.getUint16(i*2, true));
+
+    const t0 = performance.now();
+    const r = await decSess.run({ tokens: new ort.Tensor('int64', tok, [1, n]) });
+    const au = istft(r.magnitude.data, r.phase.data);
+    const t1 = performance.now();
+
+    log(`Decoded ${((t1-t0)/1000).toFixed(2)}s -> ${(au.length/SR).toFixed(1)}s`, 'ok');
+    document.getElementById('stat-decode').textContent = ((t1-t0)/1000).toFixed(1) + 's';
+
+    if (playCtx.state === 'suspended') await playCtx.resume();
+    const buf = playCtx.createBuffer(1, au.length, SR);
+    buf.getChannelData(0).set(au);
+    const src = playCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(playCtx.destination);
+    src.start();
+  } catch (e) {
+    log('Decode: ' + e.message, 'warn');
+    console.error(e);
+  }
+}
+
+// Enter key joins room
+document.getElementById('room-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') toggleConnect();
+});
+</script>
+</body>
+</html>
