@@ -19,7 +19,7 @@ export function Header({ theme, onThemeChange }: HeaderProps) {
   return (
     <div className="col-span-full flex items-center gap-2.5 px-4.5 bg-[var(--mantle)] border-b border-[var(--surface0)] h-11">
       <h1 className="text-[0.95rem] font-bold text-[var(--text)]">
-        FocalCodec
+        TinyVoice
       </h1>
       <Badge
         variant="secondary"
