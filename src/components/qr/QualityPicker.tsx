@@ -1,5 +1,5 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { getCached } from "@/lib/modelCache";
+import { getCached } from "@/lib/model-cache";
 import { QUALITY_OPTIONS, type Quality } from "@/lib/constants";
 import { useEffect, useState } from "react";
 

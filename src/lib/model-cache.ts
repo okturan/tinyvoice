@@ -50,3 +50,35 @@ export async function clearModelCache(): Promise<void> {
     tx.onerror = () => resolve();
   });
 }
+
+export async function getAllCachedKeys(): Promise<string[]> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).getAllKeys();
+    req.onsuccess = () => resolve(req.result as string[]);
+    req.onerror = () => resolve([]);
+  });
+}
+
+export async function getCachedSize(key: string): Promise<number> {
+  const db = await openDB();
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => {
+      const data = req.result as ArrayBuffer | undefined;
+      resolve(data ? data.byteLength : 0);
+    };
+    req.onerror = () => resolve(0);
+  });
+}
+
+export async function getTotalCacheSize(): Promise<{ keys: string[]; totalBytes: number }> {
+  const keys = await getAllCachedKeys();
+  let totalBytes = 0;
+  for (const key of keys) {
+    totalBytes += await getCachedSize(key);
+  }
+  return { keys, totalBytes };
+}

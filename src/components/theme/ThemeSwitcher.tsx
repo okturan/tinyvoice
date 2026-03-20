@@ -10,7 +10,7 @@ export function ThemeSwitcher() {
           key={t.id}
           title={t.label}
           onClick={() => setTheme(t.id)}
-          className="size-3 rounded-full border-2 transition-[border-color] duration-150 hover:scale-115 cursor-pointer"
+          className="size-3 rounded-full border-2 ring-1 ring-inset ring-white/10 transition-[border-color] duration-150 hover:scale-115 cursor-pointer"
           style={{
             backgroundColor: t.swatch,
             borderColor: theme === t.id ? "var(--text)" : "transparent",

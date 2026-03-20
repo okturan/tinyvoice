@@ -1,47 +1,31 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
+import { useRoom } from "@/contexts/RoomContext";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
-import { AppShell } from "@/components/layout/AppShell";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { TopBar } from "@/components/ptt/TopBar";
+import { SettingsSheet } from "@/components/ptt/SettingsSheet";
+import { ConnectionPanel } from "@/components/ptt/ConnectionPanel";
 import { PTTButton, type PTTState } from "@/components/ptt/PTTButton";
 import { RecordingInfo } from "@/components/ptt/RecordingInfo";
 import { StatsStrip } from "@/components/ptt/StatsStrip";
 import { ActivityLog, type LogEntry } from "@/components/ptt/ActivityLog";
 import { ShareModal } from "@/components/ptt/ShareModal";
-import { WORKER_WS, SR, type ThemeId } from "@/lib/constants";
-import { randomName } from "@/lib/names";
+import { SR } from "@/lib/constants";
 import { fmt } from "@/lib/format";
 
 let logIdCounter = 0;
 
 export function PTTPage() {
-  // Theme
-  const [theme, setTheme] = useState<ThemeId>(() => {
-    return (localStorage.getItem("fc-theme") as ThemeId) || "mocha";
-  });
-  const handleThemeChange = useCallback((id: ThemeId) => {
-    setTheme(id);
-    document.documentElement.dataset.theme = id;
-    localStorage.setItem("fc-theme", id);
-  }, []);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Username
-  const [username, setUsername] = useState(
-    () => localStorage.getItem("fc-username") || randomName()
-  );
-  const handleUsernameChange = useCallback((name: string) => {
-    setUsername(name);
-    localStorage.setItem("fc-username", name);
-  }, []);
-
-  // WebSocket connection state
-  const [connected, setConnected] = useState(false);
-  const [connectedRoom, setConnectedRoom] = useState("");
-  const [connectedUsers, setConnectedUsers] = useState<string[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
+  // Contexts
+  const codec = useCodecContext();
+  const stats = useStats();
+  const room = useRoom();
+  const recorder = useAudioRecorder();
+  const player = useAudioPlayer();
 
   // Log
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -63,12 +47,6 @@ export function PTTPage() {
     []
   );
 
-  // Codec
-  const codec = useCodecContext();
-  const stats = useStats();
-  const recorder = useAudioRecorder();
-  const player = useAudioPlayer();
-
   // Share modal
   const [shareOpen, setShareOpen] = useState(false);
   const [shareData, setShareData] = useState({
@@ -82,19 +60,20 @@ export function PTTPage() {
   const [pttState, setPttState] = useState<PTTState>("disabled");
 
   // Determine if PTT is ready
-  const isPttReady = codec.modelsLoaded && wsRef.current?.readyState === 1;
+  const isPttReady = codec.modelsLoaded && room.isConnected;
 
   // Decode incoming packet
   const handleDecode = useCallback(
-    async (data: Uint8Array) => {
-      stats.addRecv(data.length);
-      stats.setLastRecv(data.length);
-      addLog(`Received ${fmt(data.length)}`, "recv");
-      addLog("", "recv", data, "recv");
+    async (data: ArrayBuffer) => {
+      const packet = new Uint8Array(data);
+      stats.addRecv(packet.length);
+      stats.setLastRecv(packet.length);
+      addLog(`Received ${fmt(packet.length)}`, "recv");
+      addLog("", "recv", packet, "recv");
 
       try {
         const t0 = performance.now();
-        const audio = await codec.decode(data);
+        const audio = await codec.decode(packet);
         const t1 = performance.now();
         const decTime = (t1 - t0) / 1000;
 
@@ -114,82 +93,38 @@ export function PTTPage() {
     [codec, stats, player, addLog]
   );
 
-  // WebSocket handlers
-  const joinRoom = useCallback(
-    (room: string) => {
-      // Cleanup existing
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.onerror = null;
-        wsRef.current.onmessage = null;
-        try {
-          wsRef.current.close();
-        } catch {
-          // ignore
-        }
-        wsRef.current = null;
+  // Register packet handler with RoomContext
+  useEffect(() => {
+    const unsubscribe = room.onPacketReceived(handleDecode);
+    return unsubscribe;
+  }, [room, handleDecode]);
+
+  // Log room events
+  const prevConnected = useRef(room.isConnected);
+  const prevRoom = useRef(room.currentRoom);
+  const prevUserCount = useRef(room.userCount);
+
+  useEffect(() => {
+    if (room.isConnected && !prevConnected.current && room.currentRoom) {
+      addLog(`Joined "${room.currentRoom}"`, "ok");
+      if (codec.modelsLoaded) {
+        setPttState("idle");
       }
-
-      addLog(`Joining "${room}"...`, "info");
-      setConnectedRoom(room);
-
-      const ws = new WebSocket(WORKER_WS + encodeURIComponent(room));
-      ws.binaryType = "arraybuffer";
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setConnected(true);
-        setConnectedUsers([]);
-        ws.send(JSON.stringify({ type: "hello", name: username }));
-        addLog(`Joined "${room}"`, "ok");
-        if (codec.modelsLoaded) {
-          setPttState("idle");
-        }
-      };
-
-      ws.onmessage = async (e) => {
-        if (typeof e.data === "string") {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "users") {
-            stats.setUserCount(msg.count);
-            setConnectedUsers(msg.names || []);
-            addLog(`${msg.count} user(s) in room`, "dim");
-          }
-          return;
-        }
-        await handleDecode(new Uint8Array(e.data));
-      };
-
-      ws.onclose = () => {
-        setConnected(false);
-        stats.setUserCount(0);
-        setPttState("disabled");
-      };
-
-      ws.onerror = () => {
-        addLog("Connection error", "warn");
-      };
-    },
-    [username, codec.modelsLoaded, stats, addLog, handleDecode]
-  );
-
-  const leaveRoom = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onmessage = null;
-      try {
-        wsRef.current.close();
-      } catch {
-        // ignore
-      }
-      wsRef.current = null;
+    } else if (!room.isConnected && prevConnected.current) {
+      addLog("Left room", "dim");
+      setPttState("disabled");
     }
-    setConnected(false);
-    stats.setUserCount(0);
-    addLog("Left room", "dim");
-    setPttState("disabled");
-  }, [stats, addLog]);
+    prevConnected.current = room.isConnected;
+    prevRoom.current = room.currentRoom;
+  }, [room.isConnected, room.currentRoom, codec.modelsLoaded, addLog]);
+
+  useEffect(() => {
+    if (room.isConnected && room.userCount !== prevUserCount.current) {
+      stats.setUserCount(room.userCount);
+      addLog(`${room.userCount} user(s) in room`, "dim");
+    }
+    prevUserCount.current = room.userCount;
+  }, [room.isConnected, room.userCount, stats, addLog]);
 
   // PTT handlers
   const handlePttDown = useCallback(async () => {
@@ -252,13 +187,10 @@ export function PTTPage() {
       });
       setShareOpen(true);
 
-      // Send via WebSocket
-      const ws = wsRef.current;
-      if (ws && ws.readyState === 1) {
-        ws.send(packet.buffer);
-        addLog(`Sent ${fmt(packet.length)}`, "ok");
-        addLog("", "ok", packet, "sent");
-      }
+      // Send via RoomContext
+      room.sendPacket(packet.buffer);
+      addLog(`Sent ${fmt(packet.length)}`, "ok");
+      addLog("", "ok", packet, "sent");
     } catch (e) {
       addLog(
         "Encode: " + (e instanceof Error ? e.message : String(e)),
@@ -267,9 +199,9 @@ export function PTTPage() {
     }
 
     setPttState(isPttReady ? "idle" : "disabled");
-  }, [recorder, codec, stats, addLog, isPttReady]);
+  }, [recorder, codec, stats, room, addLog, isPttReady]);
 
-  // Update PTT state when codec loads
+  // Update PTT state when codec loads or connection changes
   const effectivePttState: PTTState =
     pttState === "recording" || pttState === "encoding" || pttState === "sending"
       ? pttState
@@ -279,23 +211,18 @@ export function PTTPage() {
 
   return (
     <>
-      <AppShell
-        header={<Header theme={theme} onThemeChange={handleThemeChange} />}
-        sidebar={
-          <Sidebar
-            username={username}
-            onUsernameChange={handleUsernameChange}
-            connected={connected}
-            connectedRoom={connectedRoom}
-            connectedUsers={connectedUsers}
-            onJoinRoom={joinRoom}
-            onLeaveRoom={leaveRoom}
-          />
-        }
-      >
-        <div className="flex flex-col min-h-0 overflow-hidden">
-          {/* PTT zone */}
-          <div className="flex-none flex flex-col items-center justify-center relative py-6 px-3 pb-15">
+      <div className="min-h-screen bg-[var(--base)] text-[var(--text)]">
+        <div className="max-w-[520px] mx-auto flex flex-col min-h-screen">
+          {/* Top Bar */}
+          <TopBar onSettingsOpen={() => setSettingsOpen(true)} />
+
+          {/* Connection Panel */}
+          <div className="px-3 pt-3">
+            <ConnectionPanel />
+          </div>
+
+          {/* PTT Zone */}
+          <div className="flex-none flex flex-col items-center justify-center py-6 px-3">
             <PTTButton
               state={effectivePttState}
               onPointerDown={handlePttDown}
@@ -311,14 +238,27 @@ export function PTTPage() {
                 hold to talk {"\u00b7"} release to send
               </div>
             )}
-            <StatsStrip />
+
+            {/* Stats Row */}
+            <div className="w-full mt-4">
+              <StatsStrip />
+            </div>
           </div>
 
-          {/* Activity log */}
-          <ActivityLog entries={logEntries} />
+          {/* Activity Log */}
+          <div className="flex-1 min-h-0 px-3 pb-3">
+            <ActivityLog entries={logEntries} />
+          </div>
         </div>
-      </AppShell>
+      </div>
 
+      {/* Settings Sheet */}
+      <SettingsSheet
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
+
+      {/* Share Modal */}
       <ShareModal
         open={shareOpen}
         onOpenChange={setShareOpen}

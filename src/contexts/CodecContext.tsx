@@ -33,6 +33,7 @@ interface CodecContextValue {
   progress: number;
   modelsLoaded: boolean;
   loadModels: () => Promise<void>;
+  abortLoading: () => void;
   clearModelCache: () => Promise<void>;
   encode: (audio: Float32Array, quality?: Quality) => Promise<Uint8Array>;
   decode: (packet: Uint8Array) => Promise<Float32Array>;
@@ -43,9 +44,10 @@ const CodecContext = createContext<CodecContextValue | null>(null);
 /** Load a model file and create an ORT inference session */
 async function loadAndCreateSession(
   name: string,
-  onProgress: (info: ModelLoadProgress) => void
+  onProgress: (info: ModelLoadProgress) => void,
+  signal?: AbortSignal
 ): Promise<ort.InferenceSession> {
-  const buf = await loadModel(name, onProgress);
+  const buf = await loadModel(name, onProgress, signal);
   return window.ort.InferenceSession.create(buf, {
     executionProviders: ["wasm"],
   });
@@ -87,16 +89,21 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const compSessions = useRef<SessionCache>({});
   const decSessions = useRef<SessionCache>({});
   const istftWinRef = useRef<Float32Array | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const loadModels = useCallback(async () => {
     if (modelsLoaded) return;
     setState("loading");
     setProgress(0);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
     try {
       // iSTFT window (local static asset)
       setStatusText("iSTFT...");
-      const wr = await fetch("/istft_window.json");
+      const wr = await fetch("/istft_window.json", { signal });
       istftWinRef.current = new Float32Array(await wr.json());
 
       // Decoder 50hz
@@ -104,7 +111,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       const decPromise = loadAndCreateSession("decoder_50hz.onnx", (info) => {
         setProgress(info.progress * 15);
         setStatusText(info.status);
-      });
+      }, signal);
       decSessions.current["50hz"] = decPromise;
       await decPromise;
       setProgress(15);
@@ -114,7 +121,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       const encSess = await loadAndCreateSession("encoder.onnx", (info) => {
         setProgress(15 + info.progress * 65);
         setStatusText(info.status);
-      });
+      }, signal);
       encSessRef.current = encSess;
       setProgress(80);
 
@@ -123,7 +130,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       const compPromise = loadAndCreateSession("compressor_50hz.onnx", (info) => {
         setProgress(80 + info.progress * 15);
         setStatusText(info.status);
-      });
+      }, signal);
       compSessions.current["50hz"] = compPromise;
       await compPromise;
       setProgress(100);
@@ -132,6 +139,10 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       setStatusText("Ready \u2014 encoder + 50hz comp/dec");
       setModelsLoaded(true);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        // User cancelled -- don't treat as error
+        return;
+      }
       setState("error");
       setStatusText("Error");
       const msg = e instanceof Error ? e.message : String(e);
@@ -139,8 +150,20 @@ export function CodecProvider({ children }: { children: ReactNode }) {
         await clearCache();
       }
       throw e;
+    } finally {
+      abortControllerRef.current = null;
     }
   }, [modelsLoaded]);
+
+  const abortLoading = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setState("idle");
+    setStatusText("Cancelled");
+    setProgress(0);
+  }, []);
 
   const encode = useCallback(
     async (audio: Float32Array, quality: Quality = "50hz"): Promise<Uint8Array> => {
@@ -233,6 +256,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
         progress,
         modelsLoaded,
         loadModels,
+        abortLoading,
         clearModelCache: clearModelCacheFn,
         encode,
         decode,

@@ -5,7 +5,7 @@ import {
   QUALITY_TO_MAGIC,
   QUALITY_RATES,
 } from "./constants";
-import { loadModel } from "./modelCache";
+import { loadModel, type ModelLoadProgress } from "./model-loader";
 import { istft } from "./istft";
 
 type OrtSession = Awaited<
@@ -22,6 +22,18 @@ export interface ProgressCallback {
   onStatus?: (msg: string) => void;
 }
 
+/** Adapt a ProgressCallback to the ModelLoadProgress interface used by loadModel */
+function adaptProgress(
+  cb: ProgressCallback,
+  scale = 1,
+  offset = 0,
+): (info: ModelLoadProgress) => void {
+  return (info) => {
+    cb.onProgress(offset + info.progress * scale);
+    cb.onStatus?.(info.status);
+  };
+}
+
 export async function loadEncoder(cb: ProgressCallback): Promise<void> {
   if (encSession) {
     cb.onProgress(1);
@@ -29,8 +41,7 @@ export async function loadEncoder(cb: ProgressCallback): Promise<void> {
   }
   const bytes = await loadModel(
     "encoder.onnx",
-    (p) => cb.onProgress(p * 0.7),
-    cb.onStatus,
+    adaptProgress(cb, 0.7),
   );
   cb.onStatus?.("Initializing encoder...");
   encSession = await ort.InferenceSession.create(bytes, {
@@ -47,7 +58,7 @@ export async function loadCompressor(
     return;
   }
   const name = `compressor_${quality}.onnx`;
-  const bytes = await loadModel(name, cb.onProgress, cb.onStatus);
+  const bytes = await loadModel(name, adaptProgress(cb));
   cb.onStatus?.(`Initializing ${quality} compressor...`);
   compSessions[quality] = await ort.InferenceSession.create(bytes, {
     executionProviders: ["wasm"],
@@ -63,7 +74,7 @@ export async function loadDecoder(
     return;
   }
   const name = `decoder_${quality}.onnx`;
-  const bytes = await loadModel(name, cb.onProgress, cb.onStatus);
+  const bytes = await loadModel(name, adaptProgress(cb));
   cb.onStatus?.(`Initializing ${quality} decoder...`);
   decSessions[quality] = await ort.InferenceSession.create(bytes, {
     executionProviders: ["wasm"],

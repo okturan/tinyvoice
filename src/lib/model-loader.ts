@@ -9,7 +9,8 @@ export interface ModelLoadProgress {
 
 export async function loadModel(
   name: string,
-  onProgress: (info: ModelLoadProgress) => void
+  onProgress: (info: ModelLoadProgress) => void,
+  signal?: AbortSignal
 ): Promise<ArrayBuffer> {
   // Check IndexedDB cache first
   const cached = await getCached(name);
@@ -30,7 +31,7 @@ export async function loadModel(
 
   // Download from HuggingFace
   const url = MODEL_BASE + name;
-  const resp = await fetch(url);
+  const resp = await fetch(url, { signal });
   const total = +(resp.headers.get("Content-Length") ?? "0");
   const totalMB = total ? (total / 1048576).toFixed(0) + " MB" : "?";
   onProgress({ progress: 0, status: `Downloading ${name} (${totalMB})...` });
@@ -41,6 +42,10 @@ export async function loadModel(
   const t0 = performance.now();
 
   for (;;) {
+    if (signal?.aborted) {
+      await reader.cancel();
+      throw new DOMException("Download cancelled", "AbortError");
+    }
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
