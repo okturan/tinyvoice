@@ -1,7 +1,6 @@
 import type { Quality } from "./constants";
 import {
   SR,
-  MODEL_BASE,
   MAGIC_TO_QUALITY,
   QUALITY_TO_MAGIC,
   QUALITY_RATES,

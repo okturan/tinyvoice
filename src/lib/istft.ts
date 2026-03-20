@@ -4,25 +4,27 @@ import { NFFT, HOP, WLEN, PAD } from "@/lib/constants";
  * Inverse real FFT via Cooley-Tukey radix-2 algorithm.
  * Takes real + imaginary parts of the one-sided spectrum,
  * returns n real-valued time-domain samples.
+ *
+ * All array indices are provably in-bounds — non-null assertions are safe.
  */
 function irfft(re: Float32Array, im: Float32Array, n: number): Float32Array {
   const fR = new Float32Array(n);
   const fI = new Float32Array(n);
   const h = re.length;
   for (let i = 0; i < h; i++) {
-    fR[i] = re[i];
-    fI[i] = im[i];
+    fR[i] = re[i]!;
+    fI[i] = im[i]!;
   }
   for (let i = h; i < n; i++) {
-    fR[i] = fR[n - i];
-    fI[i] = -fI[n - i];
+    fR[i] = fR[n - i]!;
+    fI[i] = -fI[n - i]!;
   }
   // Bit-reversal permutation
   let j = 0;
   for (let i = 0; i < n; i++) {
     if (i < j) {
-      [fR[i], fR[j]] = [fR[j], fR[i]];
-      [fI[i], fI[j]] = [fI[j], fI[i]];
+      [fR[i], fR[j]] = [fR[j]!, fR[i]!];
+      [fI[i], fI[j]] = [fI[j]!, fI[i]!];
     }
     let m = n >> 1;
     while (m >= 1 && j >= m) {
@@ -39,16 +41,16 @@ function irfft(re: Float32Array, im: Float32Array, n: number): Float32Array {
       for (let k = 0; k < hs; k++) {
         const c = Math.cos(a * k);
         const sn = Math.sin(a * k);
-        const tR = c * fR[i + hs + k] - sn * fI[i + hs + k];
-        const tI = sn * fR[i + hs + k] + c * fI[i + hs + k];
-        fR[i + hs + k] = fR[i + k] - tR;
-        fI[i + hs + k] = fI[i + k] - tI;
+        const tR = c * fR[i + hs + k]! - sn * fI[i + hs + k]!;
+        const tI = sn * fR[i + hs + k]! + c * fI[i + hs + k]!;
+        fR[i + hs + k] = fR[i + k]! - tR;
+        fI[i + hs + k] = fI[i + k]! - tI;
         fR[i + k] += tR;
         fI[i + k] += tI;
       }
   }
   const o = new Float32Array(n);
-  for (let i = 0; i < n; i++) o[i] = fR[i] / n;
+  for (let i = 0; i < n; i++) o[i] = fR[i]! / n;
   return o;
 }
 
@@ -73,16 +75,16 @@ export function istft(
     const r = new Float32Array(hN);
     const im = new Float32Array(hN);
     for (let f = 0; f < hN; f++) {
-      r[f] = mag[off + f] * Math.cos(ph[off + f]);
-      im[f] = mag[off + f] * Math.sin(ph[off + f]);
+      r[f] = mag[off + f]! * Math.cos(ph[off + f]!);
+      im[f] = mag[off + f]! * Math.sin(ph[off + f]!);
     }
     const fr = irfft(r, im, NFFT);
     const st = t * HOP;
     for (let i = 0; i < WLEN; i++) {
-      o[st + i] += fr[i] * win[i];
-      wE[st + i] += win[i] * win[i];
+      o[st + i] += fr[i]! * win[i]!;
+      wE[st + i] += win[i]! * win[i]!;
     }
   }
-  for (let i = 0; i < oS; i++) if (wE[i] > 1e-8) o[i] /= wE[i];
+  for (let i = 0; i < oS; i++) if (wE[i]! > 1e-8) o[i] /= wE[i]!;
   return o.slice(PAD, oS - PAD);
 }

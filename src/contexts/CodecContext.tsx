@@ -6,8 +6,6 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { OrtInferenceSession } from "@/lib/ort-types";
-import { getOrt } from "@/lib/ort-types";
 import { loadModel, type ModelLoadProgress } from "@/lib/model-loader";
 import { MAGIC } from "@/lib/constants";
 import { clearModelCache as clearCache } from "@/lib/model-cache";
@@ -46,10 +44,9 @@ const CodecContext = createContext<CodecContextValue | null>(null);
 async function loadAndCreateSession(
   name: string,
   onProgress: (info: ModelLoadProgress) => void
-): Promise<OrtInferenceSession> {
-  const ort = getOrt();
+): Promise<ort.InferenceSession> {
   const buf = await loadModel(name, onProgress);
-  return ort.InferenceSession.create(buf, {
+  return window.ort.InferenceSession.create(buf, {
     executionProviders: ["wasm"],
   });
 }
@@ -58,13 +55,13 @@ async function loadAndCreateSession(
  * Lazy-loading session cache. Stores promises (not resolved sessions)
  * so concurrent callers for the same quality share a single load.
  */
-type SessionCache = Partial<Record<Quality, Promise<OrtInferenceSession>>>;
+type SessionCache = Partial<Record<Quality, Promise<ort.InferenceSession>>>;
 
 function getOrLoadSession(
   cache: React.RefObject<SessionCache>,
   prefix: string,
   quality: Quality
-): Promise<OrtInferenceSession> {
+): Promise<ort.InferenceSession> {
   const existing = cache.current[quality];
   if (existing) return existing;
 
@@ -86,7 +83,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState(0);
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
-  const encSessRef = useRef<OrtInferenceSession | null>(null);
+  const encSessRef = useRef<ort.InferenceSession | null>(null);
   const compSessions = useRef<SessionCache>({});
   const decSessions = useRef<SessionCache>({});
   const istftWinRef = useRef<Float32Array | null>(null);
@@ -147,14 +144,14 @@ export function CodecProvider({ children }: { children: ReactNode }) {
 
   const encode = useCallback(
     async (audio: Float32Array, quality: Quality = "50hz"): Promise<Uint8Array> => {
-      const ort = getOrt();
+      const ortRuntime = window.ort;
       const encSess = encSessRef.current;
       if (!encSess) throw new Error("Models not loaded");
 
       const compSess = await getOrLoadSession(compSessions, "compressor", quality);
 
       const feats = await encSess.run({
-        audio: new ort.Tensor("float32", audio, [1, audio.length]),
+        audio: new ortRuntime.Tensor("float32", audio, [1, audio.length]),
       });
       const r = await compSess.run({ features: feats.features });
       const tok = r.tokens.data;
@@ -173,7 +170,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
 
   const decode = useCallback(
     async (packet: Uint8Array): Promise<Float32Array> => {
-      const ort = getOrt();
+      const ortRuntime = window.ort;
       const win = istftWinRef.current;
       if (!win) throw new Error("Models not loaded");
 
@@ -205,7 +202,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       }
 
       const r = await decSess.run({
-        tokens: new ort.Tensor("int64", tok, [1, n]),
+        tokens: new ortRuntime.Tensor("int64", tok, [1, n]),
       });
       return istft(
         r.magnitude.data as Float32Array,
