@@ -16,11 +16,11 @@ body {
 /* ── App Shell ──────────────────────────────────────── */
 .app {
   width: min(96vw, 960px);
-  height: min(94vh, 740px);
+  height: min(94vh, 700px);
   margin: auto;
   display: grid;
-  grid-template-columns: 260px 1fr;
-  grid-template-rows: 46px 1fr;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 44px 1fr;
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--surface0);

@@ -207,15 +207,17 @@ async function setCache(key, data) {
   });
 }
 
-async function dlModel(name, onProgress) {
+async function dlModel(name, onProgress, statusEl) {
   // Check cache first
   const cached = await getCached(name);
   if (cached && cached.byteLength > 1048576) {
+    if (statusEl) statusEl.textContent = `${name} (cached, ${(cached.byteLength/1048576).toFixed(0)} MB)`;
     onProgress(1);
     return cached;
   }
 
   // Download
+  if (statusEl) statusEl.textContent = `Downloading ${name}...`;
   const resp = await fetch(MODEL_BASE + name);
   const total = +resp.headers.get('Content-Length') || 1;
   const reader = resp.body.getReader();
@@ -261,15 +263,13 @@ async function loadEncoder() {
     actx = new AudioContext({sampleRate:SR});
 
     // Load shared WavLM encoder
-    st.textContent = 'Downloading encoder (595 MB)...';
-    const encBytes = await dlModel('encoder.onnx', p => { prog.style.width = (p*70)+'%'; st.textContent = `Encoder: ${(p*595).toFixed(0)} / 595 MB`; });
+    const encBytes = await dlModel('encoder.onnx', p => { prog.style.width = (p*70)+'%'; st.textContent = `Encoder: ${(p*595).toFixed(0)} / 595 MB`; }, st);
     st.textContent = 'Initializing encoder...';
     prog.style.width = '72%';
     encSess = await ort.InferenceSession.create(encBytes, {executionProviders:['wasm']});
 
     // Load 12.5hz compressor (smaller QR codes)
-    st.textContent = 'Downloading 12.5hz compressor (76 MB)...';
-    const compBytes = await dlModel('compressor_12_5hz.onnx', p => { prog.style.width = (72+p*18)+'%'; });
+    const compBytes = await dlModel('compressor_12_5hz.onnx', p => { prog.style.width = (72+p*18)+'%'; }, st);
     st.textContent = 'Initializing compressor...';
     prog.style.width = '92%';
     compSess = await ort.InferenceSession.create(compBytes, {executionProviders:['wasm']});
@@ -476,16 +476,9 @@ async function decodeAndPlay() {
     st.textContent='Loading iSTFT...';prog.style.width='5%';
     const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
 
-    st.textContent='Loading decoder...';
-    const resp=await fetch(MODEL_BASE+'decoder_12_5hz.onnx');
-    const total=+resp.headers.get('Content-Length')||141000000;
-    const reader=resp.body.getReader();const chunks=[];let received=0;
-    while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);received+=value.length;prog.style.width=(5+received/total*70)+'%';
-      if(received%(20*1048576)<65536) st.textContent=`Decoder: ${(received/1048576).toFixed(0)} MB`;}
-    const mb=new Uint8Array(received);let off=0;for(const c of chunks){mb.set(c,off);off+=c.length;}
-
-    st.textContent='Initializing...';prog.style.width='80%';
-    decSess=await ort.InferenceSession.create(mb.buffer,{executionProviders:['wasm']});
+    const mb=await dlModel('decoder_12_5hz.onnx', p => { prog.style.width=(5+p*70)+'%'; }, st);
+    st.textContent='Initializing decoder...';prog.style.width='80%';
+    decSess=await ort.InferenceSession.create(mb,{executionProviders:['wasm']});
 
     st.textContent='Decoding...';prog.style.width='90%';
     const tokens=new BigInt64Array(decNTokens);
