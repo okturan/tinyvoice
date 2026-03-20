@@ -163,13 +163,13 @@ export function PTTPage() {
                       <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[var(--green)] animate-ping opacity-30" />
                     </div>
                     <span className="font-mono text-[0.85rem] font-semibold">{room.currentRoom}</span>
-                    <Badge variant="secondary" className="bg-[var(--surface0)] text-[var(--overlay)] text-[0.55rem] font-mono border-0">
+                    <Badge variant="secondary" className="bg-[var(--surface0)] text-[var(--overlay)] text-[0.75rem] font-mono border-0">
                       {room.userCount} online
                     </Badge>
                     <div className="flex-1" />
                     <button
                       onClick={() => room.leaveRoom()}
-                      className="text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer"
+                      className="text-[0.8rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer"
                     >
                       Leave
                     </button>
@@ -177,7 +177,7 @@ export function PTTPage() {
                   {room.users.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2 ml-6">
                       {room.users.map(u => (
-                        <span key={u} className="text-[0.55rem] font-mono px-1.5 py-0.5 rounded bg-[var(--surface0)] text-[var(--subtext)]">{u}</span>
+                        <span key={u} className="text-[0.75rem] font-mono px-1.5 py-0.5 rounded bg-[var(--surface0)] text-[var(--subtext)]">{u}</span>
                       ))}
                     </div>
                   )}
@@ -187,7 +187,7 @@ export function PTTPage() {
               <Card className="border-[var(--surface0)] bg-[var(--mantle)]">
                 <CardContent className="p-3 px-4">
                   {/* Join input */}
-                  <div className="text-[0.55rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-2">Join a room</div>
+                  <div className="text-[0.75rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-2">Join a room</div>
                   <div className="flex gap-1.5 mb-3">
                     <div className="flex-1 flex rounded-md overflow-hidden border border-[var(--surface0)] bg-[var(--crust)] focus-within:border-[var(--surface1)] transition-colors">
                       <input
@@ -215,15 +215,15 @@ export function PTTPage() {
                   {/* Active rooms from lobby */}
                   {room.activeRooms.length > 0 && (
                     <div className="mb-3">
-                      <div className="text-[0.5rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Active now</div>
+                      <div className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Active now</div>
                       <div className="flex flex-wrap gap-1">
                         {room.activeRooms.map(r => (
                           <button key={r.name} onClick={() => handleJoin(r.name)}
                             className="group flex items-center gap-1.5 px-2.5 py-1 rounded-md cursor-pointer transition-colors hover:bg-[var(--surface0)] border border-transparent hover:border-[var(--surface0)]"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] flex-shrink-0" />
-                            <span className="font-mono text-[0.68rem] text-[var(--text)]">{r.name}</span>
-                            <span className="text-[0.5rem] text-[var(--green)] font-mono">{r.count}</span>
+                            <span className="font-mono text-[0.8rem] text-[var(--text)]">{r.name}</span>
+                            <span className="text-[0.8rem] text-[var(--green)] font-mono">{r.count}</span>
                           </button>
                         ))}
                       </div>
@@ -232,17 +232,17 @@ export function PTTPage() {
 
                   {/* Quick join suggestions */}
                   <div>
-                    <div className="text-[0.5rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Quick join</div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] mb-1.5">Quick join</div>
                     <div className="flex flex-wrap gap-1">
                       {SUGGESTED_ROOMS.map(name => (
                         <button key={name} onClick={() => handleJoin(name)}
                           className="group px-2.5 py-1 rounded-md cursor-pointer transition-colors hover:bg-[var(--surface0)] border border-[var(--surface0)]/50 hover:border-[var(--surface0)]"
                         >
-                          <span className="font-mono text-[0.65rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{name}</span>
+                          <span className="font-mono text-[0.8rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{name}</span>
                         </button>
                       ))}
                     </div>
-                    <p className="text-[0.5rem] text-[var(--surface2)] mt-1.5">Rooms are created on join. Anyone with the same name is connected.</p>
+                    <p className="text-[0.8rem] text-[var(--overlay)] mt-2">Rooms are created on join. Anyone with the same name is connected.</p>
                   </div>
                 </CardContent>
               </Card>
@@ -267,7 +267,7 @@ export function PTTPage() {
                 {effectiveState === "recording" ? <Square className="w-7 h-7" />
                   : effectiveState === "encoding" ? <Loader2 className="w-7 h-7 animate-spin" />
                   : <Mic className="w-7 h-7" />}
-                <span className="text-[0.65rem] font-semibold tracking-widest uppercase">
+                <span className="text-[0.8rem] font-semibold tracking-widest uppercase">
                   {effectiveState === "recording" ? "RELEASE" : effectiveState === "encoding" ? "ENCODING" : "HOLD"}
                 </span>
               </button>
@@ -279,7 +279,7 @@ export function PTTPage() {
               )}
 
               {!recorder.isRecording && (
-                <p className="text-[0.6rem] text-[var(--overlay)] mt-2">hold to talk &middot; release to send</p>
+                <p className="text-[0.75rem] text-[var(--overlay)] mt-2">hold to talk &middot; release to send</p>
               )}
             </div>
 
@@ -293,7 +293,7 @@ export function PTTPage() {
               ].map(s => (
                 <div key={s.label} className="text-center py-2 rounded-lg bg-[var(--mantle)] border border-[var(--surface0)]">
                   <div className={`font-mono text-[0.85rem] font-semibold ${s.color || "text-[var(--text)]"}`}>{s.value}</div>
-                  <div className="text-[0.45rem] text-[var(--overlay)] uppercase tracking-wider mt-0.5">{s.label}</div>
+                  <div className="text-[0.8rem] text-[var(--overlay)] uppercase tracking-wider mt-0.5">{s.label}</div>
                 </div>
               ))}
             </div>
@@ -302,7 +302,7 @@ export function PTTPage() {
             <Card className="border-[var(--surface0)] bg-[var(--mantle)] flex-1 min-h-[180px] flex flex-col overflow-hidden">
               <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
                 <ScrollArea className="flex-1">
-                  <div className="font-mono text-[0.65rem] leading-[1.8] p-3">
+                  <div className="font-mono text-[0.8rem] leading-[1.8] p-3">
                     {logEntries.length === 0 && (
                       <div className="text-[var(--surface2)] text-center py-6">Join a room and load models to start</div>
                     )}
