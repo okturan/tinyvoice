@@ -545,6 +545,16 @@ select { cursor: pointer; appearance: none; padding-right: 24px;
   .log { height: 80px; font-size: 0.58rem; line-height: 1.6; }
 }
 
+/* ── Sidebar link ───────────────────────────────────── */
+.sidebar-link {
+  display: flex; align-items: center; gap: 8px;
+  text-decoration: none; color: var(--overlay);
+  font-size: 0.75rem; transition: color 0.12s;
+  padding: 4px 0;
+}
+.sidebar-link:hover { color: var(--accent); }
+.sidebar-link svg { flex-shrink: 0; }
+
 /* ══════════════════════════════════════════════════════
    Share / QR Modal
    ══════════════════════════════════════════════════════ */
