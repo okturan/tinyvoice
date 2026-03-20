@@ -85,16 +85,29 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
               >
                 {codec.state === "loading" ? "Downloading..." : codec.modelsLoaded ? "Downloaded" : "Download Models"}
               </button>
-              <button
-                onClick={handleClear}
-                className={`py-2 px-3 rounded-md text-[0.7rem] border transition-colors cursor-pointer ${
-                  confirmClear
-                    ? "text-[var(--red)] border-[var(--red)]/40 bg-[var(--red)]/10 font-semibold"
-                    : "text-[var(--overlay)] border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20"
-                }`}
-              >
-                {confirmClear ? "Confirm?" : "Delete All"}
-              </button>
+              {confirmClear ? (
+                <div className="flex gap-1">
+                  <button
+                    onClick={handleClear}
+                    className="py-2 px-3 rounded-md text-[0.7rem] font-semibold text-[var(--red)] border border-[var(--red)]/40 bg-[var(--red)]/10 cursor-pointer transition-colors hover:bg-[var(--red)]/20"
+                  >
+                    Yes, delete
+                  </button>
+                  <button
+                    onClick={() => setConfirmClear(false)}
+                    className="py-2 px-2 rounded-md text-[0.7rem] text-[var(--overlay)] border border-[var(--surface0)] cursor-pointer hover:text-[var(--text)] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleClear}
+                  className="py-2 px-3 rounded-md text-[0.7rem] text-[var(--overlay)] border border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20 transition-colors cursor-pointer"
+                >
+                  Delete All
+                </button>
+              )}
             </div>
           </div>
 
