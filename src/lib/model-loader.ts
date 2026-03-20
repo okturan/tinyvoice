@@ -3,7 +3,7 @@ import { getCached, setCache, delCache } from "@/lib/model-cache";
 
 export interface ModelLoadProgress {
   /** 0..1 */
-  progress: number;
+  fraction: number;
   status: string;
 }
 
@@ -16,14 +16,14 @@ export async function loadModel(
   const cached = await getCached(name);
   if (cached && cached.byteLength > 1048576) {
     onProgress({
-      progress: 1,
+      fraction: 1,
       status: `${name} (cached, ${(cached.byteLength / 1048576).toFixed(0)} MB)`,
     });
     return cached;
   }
   if (cached) {
     onProgress({
-      progress: 0,
+      fraction: 0,
       status: `${name} cache corrupt, re-downloading`,
     });
     await delCache(name);
@@ -34,7 +34,7 @@ export async function loadModel(
   const resp = await fetch(url, { signal });
   const total = +(resp.headers.get("Content-Length") ?? "0");
   const totalMB = total ? (total / 1048576).toFixed(0) + " MB" : "?";
-  onProgress({ progress: 0, status: `Downloading ${name} (${totalMB})...` });
+  onProgress({ fraction: 0, status: `Downloading ${name} (${totalMB})...` });
 
   const reader = resp.body!.getReader();
   const chunks: Uint8Array[] = [];
@@ -55,7 +55,7 @@ export async function loadModel(
     const elapsed = (performance.now() - t0) / 1000;
     const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : "\u2014";
     onProgress({
-      progress: frac,
+      fraction: frac,
       status: `${mb} / ${totalMB} \u00b7 ${speed} MB/s`,
     });
   }

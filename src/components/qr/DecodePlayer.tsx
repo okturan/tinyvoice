@@ -2,19 +2,20 @@ import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import HexSheet from "./HexSheet";
-import { decode, estimateDuration, type ParsedTokens } from "@/lib/codec";
-import { SR, type Quality } from "@/lib/constants";
+import { codec, type ParsedPacket } from "@/lib/codec-service";
+import { Quality } from "@/types/codec";
+import { SR } from "@/lib/constants";
 import { Code } from "lucide-react";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
   { label: "Auto", value: "auto" },
-  { label: "12.5hz", value: "12_5hz" },
-  { label: "25hz", value: "25hz" },
-  { label: "50hz", value: "50hz" },
+  { label: "12.5hz", value: Quality.Hz12_5 },
+  { label: "25hz", value: Quality.Hz25 },
+  { label: "50hz", value: Quality.Hz50 },
 ];
 
 interface DecodePlayerProps {
-  parsed: ParsedTokens;
+  parsed: ParsedPacket;
 }
 
 export default function DecodePlayer({ parsed }: DecodePlayerProps) {
@@ -30,12 +31,11 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playCtxRef = useRef<AudioContext | null>(null);
 
+  const tokenCount = parsed.tokenBytes.length / 2;
   const effectiveQuality = qualityOverride || parsed.quality;
-  const estDuration = estimateDuration(parsed.tokenCount, effectiveQuality);
+  const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
 
-  const hasMagic =
-    parsed.tokens.length !== parsed.tokenCount * 2;
-  const initialStatus = `${parsed.tokens.length}B, ${parsed.tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${hasMagic ? "" : " (guessed)"}`;
+  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${parsed.hasMagicByte ? "" : " (guessed)"}`;
 
   const handleQualityChange = useCallback(
     (q: string) => {
@@ -85,13 +85,16 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
     setIsLoading(true);
     try {
       const q = effectiveQuality;
-      const audio = await decode(parsed.tokens, parsed.tokenCount, q, {
-        onProgress: (p) => setProgress(p * 100),
-        onStatus: (msg) => {
-          setStatus(msg);
+      const audio = await codec.decodeTokens(
+        parsed.tokenBytes,
+        tokenCount,
+        q,
+        (info) => {
+          setProgress(info.fraction * 100);
+          setStatus(info.status);
           setStatusType("");
         },
-      });
+      );
 
       playCtxRef.current = new AudioContext({ sampleRate: SR });
       const buf = playCtxRef.current.createBuffer(1, audio.length, SR);
@@ -106,7 +109,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       setIsLoading(false);
       setStatusType("ok");
       setStatus(
-        `${(audio.length / SR).toFixed(1)}s decoded from ${parsed.tokens.length} bytes`,
+        `${(audio.length / SR).toFixed(1)}s decoded from ${parsed.tokenBytes.length} bytes`,
       );
       src.onended = () => {
         setIsPlaying(false);
@@ -230,7 +233,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
 
       {/* Hex Sheet */}
       <HexSheet
-        data={parsed.tokens}
+        data={parsed.tokenBytes}
         open={hexOpen}
         onOpenChange={setHexOpen}
       />

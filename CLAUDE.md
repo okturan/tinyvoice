@@ -24,7 +24,7 @@ src/
     theme/              — ThemeSwitcher
     ui/                 — shadcn components + 15 itshover animated icons
   contexts/
-    CodecContext.tsx     — ONNX model loading, encode/decode for PTT page
+    CodecContext.tsx     — Thin React wrapper around codec-service singleton
     RoomContext.tsx      — WebSocket rooms, join/leave, user list
     StatsContext.tsx     — Bytes sent/recv, encode/decode timing
     ThemeContext.tsx     — 6 themes with localStorage persistence
@@ -43,11 +43,9 @@ src/
     model-cache.ts      — IndexedDB CRUD for cached models
     model-loader.ts     — Download with progress + AbortController + cache
     wire-format.ts      — Magic byte pack/unpack
-    codec.ts            — QR page's standalone codec (NEEDS UNIFICATION with CodecContext)
-    constants.ts        — SR, NFFT, HOP, relay URLs, themes, room names, quality types
-    config.ts           — Relay server URLs
+    codec-service.ts    — Unified CodecService singleton (encode/decode/model loading)
+    constants.ts        — SR, NFFT, HOP, relay URLs, themes, room names, quality options
     format.ts           — Byte formatter
-    names.ts            — Random name generators
     qrParsing.ts        — Base64 voice URL encode/decode
     audio/
       recorder-worklet.ts — AudioWorklet processor (inline Blob URL)
@@ -67,6 +65,8 @@ public/
 ## Key architecture decisions
 
 - **React + Vite + TypeScript** — ported from vanilla HTML/JS/CSS
+- **Unified codec singleton** — `codec-service.ts` shared by PTT (via CodecContext) and QR pages. Promise-based session caching prevents duplicate downloads.
+- **Quality enum** — `types/codec.ts` Quality enum ("50hz", "25hz", "12_5hz") used everywhere. Matches ONNX filenames directly.
 - **Split encoder model** — shared WavLM encoder.onnx (595MB) + per-quality compressor + decoder
 - **iSTFT in TypeScript** — Cooley-Tukey radix-2 iFFT + overlap-add. Math-critical, do not modify.
 - **Magic byte wire format** — 0x01=50hz, 0x02=25hz, 0x03=12.5hz
@@ -97,26 +97,8 @@ cd worker && wrangler dev --port 8787   # Worker dev server
 
 ## Known issues / tech debt
 
-### Critical — needs unification refactor
-- **Two separate codec systems**: `CodecContext.tsx` (PTT page) and `src/lib/codec.ts` (QR page) are independent implementations with different APIs, different model loading, different progress tracking. They should be unified into one clean system.
-- **Two model cache modules existed** — `modelCache.ts` was deleted and imports redirected to `model-cache.ts`, but `codec.ts` still has its own `loadModel` adapter function wrapping `model-cache.ts`.
 - **PTTPage still has some inline logic** that should move into contexts/hooks.
-
-### Dead files to delete during refactor
-- `src/lib/rooms.ts` — unused, zero imports
-- `src/lib/utils/names.ts` — unused duplicate of `src/lib/names.ts`
-- `src/lib/config.ts` — unused, relay URLs are in `constants.ts`
-- `src/hooks/useCodec.ts` — unused re-export stub
-- `src/hooks/useModels.ts` — unused re-export stub
-- `src/components/qr/HexSidebar.tsx` — replaced by `HexSheet.tsx`
-- `src/components/shared/UsernameInput.tsx` — unused, username is in PTTPage sidebar
-- `public/index.html` — old vanilla PTT (not used by React build)
-- `public/qr.html` — old vanilla QR page
-- `public/app.css` — old vanilla styles
-- `public/themes.css` — old vanilla themes (now in src/index.css)
-- `public/shared.js` — old vanilla shared utils (now in src/lib/)
-
-### Other
+- `public/index.html` — old vanilla PTT (not used by React build, could delete)
 - Float16 ONNX models failed ORT validation — only float32 works
 - Encoder ONNX export requires legacy tracer (dynamo=False) due to WavLM attention layer
 - Chunk size warning on build (580KB JS) — motion library is large, could code-split

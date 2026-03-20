@@ -17,7 +17,7 @@ import { HexDump } from "@/components/ptt/HexDump";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
 import { ModelManagement } from "@/components/codec/ModelManagement";
 import { SR, SUGGESTED_ROOMS } from "@/lib/constants";
-import { randomRoomName } from "@/lib/names";
+import { randomRoomName } from "@/lib/utils/names";
 import { fmt } from "@/lib/format";
 
 type PTTState = "idle" | "recording" | "encoding" | "sending" | "disabled";

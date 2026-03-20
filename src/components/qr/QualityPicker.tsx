@@ -1,6 +1,7 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { getCached } from "@/lib/model-cache";
-import { QUALITY_OPTIONS, type Quality } from "@/lib/constants";
+import { QUALITY_OPTIONS } from "@/lib/constants";
+import { Quality } from "@/types/codec";
 import { useEffect, useState } from "react";
 
 interface QualityPickerProps {
@@ -12,9 +13,9 @@ export default function QualityPicker({ value, onChange }: QualityPickerProps) {
   const [cacheState, setCacheState] = useState<
     Record<Quality, boolean | undefined>
   >({
-    "50hz": undefined,
-    "25hz": undefined,
-    "12_5hz": undefined,
+    [Quality.Hz50]: undefined,
+    [Quality.Hz25]: undefined,
+    [Quality.Hz12_5]: undefined,
   });
 
   useEffect(() => {
@@ -50,14 +51,14 @@ export default function QualityPicker({ value, onChange }: QualityPickerProps) {
             {opt.label}{" "}
             <span
               className={`text-[0.55rem] ${
-                cacheState[opt.value]
+                cacheState[opt.value as Quality]
                   ? "text-[var(--green)]"
                   : "text-[var(--surface2)]"
               }`}
             >
-              {cacheState[opt.value] === undefined
+              {cacheState[opt.value as Quality] === undefined
                 ? ""
-                : cacheState[opt.value]
+                : cacheState[opt.value as Quality]
                   ? "\u2713"
                   : "\u2193"}
             </span>

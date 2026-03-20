@@ -3,7 +3,7 @@ import { useRoom } from "@/contexts/RoomContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SUGGESTED_ROOMS } from "@/lib/constants";
-import { randomRoomName } from "@/lib/names";
+import { randomRoomName } from "@/lib/utils/names";
 
 export function ConnectionPanel() {
   const {

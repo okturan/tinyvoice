@@ -1,24 +1,20 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
-import { decode } from "@/lib/codec";
-import { SR, type Quality } from "@/lib/constants";
+import { codec } from "@/lib/codec-service";
+import { SR } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
 import { Copy, Download, Play, Square, Code } from "lucide-react";
 
 interface QRResultProps {
   packed: Uint8Array;
-  tokenCount: number;
   duration: number;
-  quality: Quality;
   onHexOpen?: () => void;
 }
 
 export default function QRResult({
   packed,
-  tokenCount,
   duration,
-  quality,
   onHexOpen,
 }: QRResultProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
@@ -65,10 +61,8 @@ export default function QRResult({
 
     setPreviewStatus("Decoding...");
     try {
-      const tokens = packed.slice(1);
-      const audio = await decode(tokens, tokenCount, quality, {
-        onProgress: () => {},
-        onStatus: setPreviewStatus,
+      const audio = await codec.decode(packed, undefined, (info) => {
+        setPreviewStatus(info.status);
       });
 
       if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
@@ -94,7 +88,7 @@ export default function QRResult({
     } catch (e) {
       setPreviewStatus((e as Error).message);
     }
-  }, [packed, quality, tokenCount, playing]);
+  }, [packed, playing]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -115,7 +109,7 @@ export default function QRResult({
           bytes
         </span>
         <span>
-          <b className="font-semibold text-[var(--text)]">{tokenCount}</b>{" "}
+          <b className="font-semibold text-[var(--text)]">{(packed.length - 1) / 2}</b>{" "}
           tokens
         </span>
         <span>

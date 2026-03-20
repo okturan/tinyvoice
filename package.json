@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && cd dist && rm -f *.onnx app.css themes.css shared.js qr.html && cd .. && wrangler pages deploy dist --project-name tinyvoice",
+    "deploy": "npm run build && cd dist && rm -f *.onnx && cd .. && wrangler pages deploy dist --project-name tinyvoice",
     "deploy:worker": "cd worker && wrangler deploy"
   },
   "dependencies": {

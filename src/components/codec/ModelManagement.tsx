@@ -82,7 +82,7 @@ export function ModelManagement() {
     setDownloading(name);
     setDlProgress(0);
     try {
-      await loadModel(name, info => setDlProgress(Math.round(info.progress * 100)));
+      await loadModel(name, info => setDlProgress(Math.round(info.fraction * 100)));
       refresh();
     } catch {
       // download failed or aborted

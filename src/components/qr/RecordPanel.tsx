@@ -5,14 +5,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import QualityPicker from "./QualityPicker";
 import QRResult from "./QRResult";
 import HexSheet from "./HexSheet";
-import { loadEncoder, loadCompressor, encode } from "@/lib/codec";
-import { SR, type Quality } from "@/lib/constants";
+import { codec } from "@/lib/codec-service";
+import { Quality } from "@/types/codec";
+import { SR } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
 
 type RecordState = "idle" | "recording" | "encoding";
 
 export default function RecordPanel() {
-  const [quality, setQuality] = useState<Quality>("12_5hz");
+  const [quality, setQuality] = useState<Quality>(Quality.Hz12_5);
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -87,14 +88,14 @@ export default function RecordPanel() {
       });
       actxRef.current = new AudioContext({ sampleRate: SR });
 
-      await loadEncoder({
-        onProgress: (p) => setProgress(p * 72),
-        onStatus: setStatus,
+      await codec.loadEncoder((info) => {
+        setProgress(info.fraction * 72);
+        setStatus(info.status);
       });
 
-      await loadCompressor(quality, {
-        onProgress: (p) => setProgress(72 + p * 20),
-        onStatus: setStatus,
+      await codec.loadCompressor(quality, (info) => {
+        setProgress(72 + info.fraction * 20);
+        setStatus(info.status);
       });
 
       setProgress(100);
@@ -217,9 +218,9 @@ export default function RecordPanel() {
       }
 
       try {
-        const result = await encode(audio, quality, {
-          onProgress: (p) => setProgress(p * 100),
-          onStatus: setStatus,
+        const result = await codec.encode(audio, quality, (info) => {
+          setProgress(info.fraction * 100);
+          setStatus(info.status);
         });
 
         setHexData(result.packed);
@@ -405,9 +406,7 @@ export default function RecordPanel() {
           <CardContent className="py-4 px-4">
             <QRResult
               packed={encodeResult.packed}
-              tokenCount={encodeResult.tokenCount}
               duration={encodeResult.duration}
-              quality={quality}
               onHexOpen={() => setHexOpen(true)}
             />
             <div className="mt-3 text-center">

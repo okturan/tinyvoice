@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import Dropzone from "./Dropzone";
 import CameraScanner from "./CameraScanner";
 import DecodePlayer from "./DecodePlayer";
-import { parseTokenData, type ParsedTokens } from "@/lib/codec";
+import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { decodeQRString } from "@/lib/qrParsing";
 
 interface DecodePanelProps {
@@ -11,16 +11,16 @@ interface DecodePanelProps {
 }
 
 export default function DecodePanel({ initialData }: DecodePanelProps) {
-  const [parsed, setParsed] = useState<ParsedTokens | null>(() => {
+  const [parsed, setParsed] = useState<ParsedPacket | null>(() => {
     if (initialData) {
-      return parseTokenData(initialData);
+      return codec.parsePacket(initialData);
     }
     return null;
   });
   const [error, setError] = useState("");
 
   const handleTokenData = useCallback((data: Uint8Array) => {
-    const result = parseTokenData(data);
+    const result = codec.parsePacket(data);
     if (!result) {
       setError("Invalid voice data");
       return;
