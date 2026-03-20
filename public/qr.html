@@ -11,7 +11,7 @@
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1rem; }
 
-.app { width:min(92vw, 460px); }
+.app { width:min(94vw, 620px); }
 
 .header { text-align:center; margin-bottom:20px; }
 .header h1 { font-size:1.1rem; color:var(--text); }
@@ -57,17 +57,31 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .new-btn:hover { background:var(--surface0); color:var(--text); }
 
 /* ── QR result layout ────────────── */
-.qr-center {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 8px; margin-bottom: 14px;
+.qr-layout {
+  display: grid; grid-template-columns: auto 1fr; gap: 14px;
+  align-items: start;
 }
-.qr-center img { border-radius: 8px; background: white; padding: 8px; }
+.qr-left {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; min-width: 180px;
+}
+.qr-left img { border-radius: 8px; background: white; padding: 6px; }
+
+.qr-hex-panel {
+  display: flex; flex-direction: column;
+  min-width: 0;
+}
+.hex-panel-title {
+  font-size: 0.55rem; color: var(--overlay);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  font-weight: 600; margin-bottom: 5px;
+}
 
 .preview-btn {
-  padding: 6px 20px; border: 1px solid var(--surface0);
+  padding: 5px 16px; border: 1px solid var(--surface0);
   background: var(--surface0); color: var(--subtext);
-  border-radius: 20px; cursor: pointer;
-  font-family: 'Inter', sans-serif; font-size: 0.72rem;
+  border-radius: 16px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.68rem;
   font-weight: 500; transition: all 0.12s;
 }
 .preview-btn:hover { background: var(--surface1); color: var(--text); }
@@ -76,10 +90,10 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 
 .hex-stream {
   background: var(--mantle); border-radius: 8px; padding: 10px;
-  font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
-  line-height: 1.6; word-break: break-all; max-height: 70px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.52rem;
+  line-height: 1.6; word-break: break-all;
   overflow-y: auto; text-align: left;
-  color: var(--surface2); margin-bottom: 10px;
+  color: var(--surface2); flex: 1; min-height: 100px; max-height: 250px;
 }
 .hex-stream .b {
   display: inline-block; width: 1.5em; text-align: center;
@@ -158,23 +172,28 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="rec-status" id="rec-status">Load models first</div>
     <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
-      <div class="qr-center">
-        <img id="qr-img" width="180" height="180" alt="QR code" style="display:none">
-        <div class="qr-meta">
-          <span><b id="qr-bytes">0</b> B</span>
-          <span><b id="qr-tokens">0</b> tok</span>
-          <span><b id="qr-dur">0</b>s</span>
+      <div class="qr-layout">
+        <div class="qr-left">
+          <img id="qr-img" width="160" height="160" alt="QR code" style="display:none">
+          <div class="qr-meta">
+            <span><b id="qr-bytes">0</b> B</span>
+            <span><b id="qr-tokens">0</b> tok</span>
+            <span><b id="qr-dur">0</b>s</span>
+          </div>
+          <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
+          <div class="qr-url-row">
+            <input class="qr-url" id="qr-url" readonly onclick="this.select()">
+            <button class="copy-btn" onclick="copyUrl()">Copy</button>
+          </div>
+          <div style="display:flex;gap:5px;margin-top:5px">
+            <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png" style="flex:1;text-align:center">Download</a>
+            <button class="new-btn" onclick="resetRecord()" style="flex:1">New</button>
+          </div>
         </div>
-        <button class="preview-btn" id="preview-btn" onclick="previewEncoded()">&#9654; Preview</button>
-      </div>
-      <div class="hex-stream" id="hex-stream"></div>
-      <div class="qr-url-row">
-        <input class="qr-url" id="qr-url" readonly onclick="this.select()">
-        <button class="copy-btn" onclick="copyUrl()">Copy</button>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:6px">
-        <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png" style="flex:1;text-align:center">Download QR</a>
-        <button class="new-btn" onclick="resetRecord()" style="flex:1">Record another</button>
+        <div class="qr-hex-panel">
+          <div class="hex-panel-title">Token Data</div>
+          <div class="hex-stream" id="hex-stream"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -358,6 +377,13 @@ async function recUp(e) {
   const prog = document.getElementById('rec-prog');
 
   const tl = recChunks.reduce((s,c) => s+c.length, 0);
+  if (tl < 4096) {
+    st.className = 'rec-status err';
+    st.textContent = 'Too short — hold longer';
+    btn.classList.remove('encoding');
+    btn.querySelector('.icon').textContent = '🎙';
+    return;
+  }
   const audio = new Float32Array(tl);
   let off = 0;
   for (const c of recChunks) { audio.set(c, off); off += c.length; }
