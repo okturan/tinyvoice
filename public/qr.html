@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="mocha">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TinyVoice QR</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="themes.css">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; padding:1rem; }
+
+.app { width:min(92vw, 460px); }
+
+.header { text-align:center; margin-bottom:20px; }
+.header h1 { font-size:1.1rem; color:var(--text); }
+.header .sub { font-size:0.72rem; color:var(--overlay); margin-top:2px; }
+
+/* Mode tabs */
+.modes { display:flex; gap:4px; margin-bottom:16px; background:var(--mantle); border-radius:10px; padding:3px; }
+.mode-btn { flex:1; padding:10px; border:none; background:none; color:var(--overlay); font-family:'Inter',sans-serif; font-size:0.8rem; font-weight:500; cursor:pointer; border-radius:8px; transition:all 0.15s; }
+.mode-btn.active { background:var(--surface0); color:var(--text); }
+.mode-btn:hover:not(.active) { color:var(--subtext); }
+
+.panel { display:none; background:var(--base); border:1px solid var(--surface0); border-radius:14px; padding:24px; }
+.panel.active { display:block; }
+
+/* ── Record panel ──────────────────── */
+.rec-btn { width:100px; height:100px; border-radius:50%; border:2px solid var(--surface1); background:var(--mantle); color:var(--overlay); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; font-family:'Inter',sans-serif; font-size:0.75rem; font-weight:600; transition:all 0.15s; margin:0 auto 12px; user-select:none; -webkit-user-select:none; touch-action:none; }
+.rec-btn:hover { border-color:var(--surface2); background:var(--surface0); color:var(--subtext); }
+.rec-btn.recording { border-color:var(--red); background:color-mix(in srgb,var(--red) 8%,var(--base)); color:var(--red); }
+.rec-btn.encoding { border-color:var(--yellow); color:var(--yellow); }
+.rec-btn .icon { font-size:1.6rem; }
+.rec-hint { text-align:center; font-size:0.65rem; color:var(--overlay); margin-bottom:16px; }
+.rec-status { text-align:center; font-size:0.75rem; color:var(--overlay); min-height:1.4em; margin-bottom:8px; }
+.rec-status.ok { color:var(--green); }
+.rec-status.err { color:var(--red); }
+
+.rec-progress { width:100%; height:2px; background:var(--surface0); border-radius:1px; overflow:hidden; margin-bottom:16px; }
+.rec-progress-fill { height:100%; width:0%; background:var(--accent); transition:width 0.3s; }
+
+/* QR result */
+.qr-result { display:none; text-align:center; }
+.qr-result img { border-radius:8px; background:white; padding:8px; margin-bottom:12px; }
+.qr-meta { display:flex; justify-content:center; gap:16px; font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:var(--overlay); margin-bottom:12px; }
+.qr-meta b { color:var(--text); font-weight:600; }
+.qr-url-row { display:flex; gap:4px; margin-bottom:8px; }
+.qr-url { flex:1; min-width:0; padding:7px 10px; background:var(--mantle); border:1px solid var(--surface0); border-radius:7px; color:var(--subtext); font-family:'JetBrains Mono',monospace; font-size:0.6rem; }
+.qr-url:focus { outline:none; }
+.copy-btn { padding:7px 14px; border:1px solid var(--surface0); background:var(--surface0); color:var(--subtext); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:500; transition:all 0.1s; white-space:nowrap; }
+.copy-btn:hover { background:var(--surface1); color:var(--text); }
+.dl-btn { display:inline-block; padding:7px 14px; border:1px solid var(--surface0); background:var(--surface0); color:var(--subtext); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:500; transition:all 0.1s; text-decoration:none; margin-top:4px; }
+.dl-btn:hover { background:var(--surface1); color:var(--text); }
+.new-btn { display:inline-block; margin-top:12px; padding:7px 14px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; transition:all 0.1s; }
+.new-btn:hover { background:var(--surface0); color:var(--text); }
+
+/* ── Decode panel ──────────────────── */
+.dropzone { border:2px dashed var(--surface1); border-radius:12px; padding:28px 16px; cursor:pointer; transition:all 0.15s; text-align:center; margin-bottom:12px; }
+.dropzone:hover,.dropzone.dragover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 5%,var(--base)); }
+.dropzone .icon { font-size:1.8rem; margin-bottom:6px; }
+.dropzone .label { font-size:0.78rem; color:var(--subtext); }
+.dropzone .hint { font-size:0.62rem; color:var(--overlay); margin-top:4px; }
+
+.or-divider { text-align:center; font-size:0.65rem; color:var(--surface2); margin:12px 0; }
+
+.cam-section { text-align:center; }
+.cam-wrap { position:relative; border-radius:12px; overflow:hidden; background:var(--mantle); margin-bottom:8px; }
+.cam-wrap video { width:100%; display:block; border-radius:12px; }
+.cam-wrap canvas { display:none; }
+.cam-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.cam-crosshair { width:160px; height:160px; border:2px solid var(--accent); border-radius:12px; opacity:0.4; }
+.cam-status { font-size:0.7rem; color:var(--overlay); margin-bottom:8px; }
+.cam-btn { padding:8px 18px; border:1px solid var(--surface0); background:var(--surface0); color:var(--subtext); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.75rem; transition:all 0.1s; }
+.cam-btn:hover { background:var(--surface1); color:var(--text); }
+.cam-btn.active { border-color:var(--red); color:var(--red); }
+
+/* Player */
+.dec-player { display:none; text-align:center; margin-top:16px; padding-top:16px; border-top:1px solid var(--surface0); }
+.play-btn { width:64px; height:64px; border-radius:50%; border:2px solid var(--accent); background:var(--mantle); color:var(--accent); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; font-size:1.6rem; transition:all 0.15s; margin-bottom:8px; }
+.play-btn:hover { background:var(--surface0); transform:scale(1.05); }
+.play-btn.loading { border-color:var(--yellow); color:var(--yellow); animation:pulse 1.2s ease infinite; }
+.play-btn.playing { border-color:var(--green); color:var(--green); }
+.play-btn:disabled { opacity:0.3; cursor:not-allowed; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.dec-status { font-size:0.72rem; color:var(--overlay); min-height:1.4em; }
+.dec-status.ok { color:var(--green); }
+.dec-status.err { color:var(--red); }
+.dec-prog { width:100%; height:2px; background:var(--surface0); border-radius:1px; overflow:hidden; margin:8px 0; }
+.dec-prog-fill { height:100%; width:0%; background:var(--accent); transition:width 0.3s; }
+
+.back-link { display:block; text-align:center; margin-top:16px; font-size:0.7rem; color:var(--overlay); text-decoration:none; }
+.back-link:hover { color:var(--accent); }
+
+#file-input { display:none; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <h1>TinyVoice QR</h1>
+    <div class="sub">voice messages as QR codes</div>
+  </div>
+
+  <div class="modes">
+    <button class="mode-btn active" onclick="setMode('record')">Record</button>
+    <button class="mode-btn" onclick="setMode('decode')">Decode</button>
+  </div>
+
+  <!-- RECORD -->
+  <div class="panel active" id="panel-record">
+    <div style="text-align:center">
+      <button class="rec-btn" id="rec-btn"
+        onpointerdown="recDown(event)" onpointerup="recUp(event)" onpointerleave="recUp(event)">
+        <span class="icon">🎙</span>
+        <span>HOLD</span>
+      </button>
+      <div class="rec-hint">hold to record &middot; release to encode</div>
+    </div>
+    <div class="rec-progress"><div class="rec-progress-fill" id="rec-prog"></div></div>
+    <div class="rec-status" id="rec-status">Load models first</div>
+    <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~660 MB)</button>
+    <div class="qr-result" id="qr-result">
+      <img id="qr-img" width="200" height="200" alt="QR code">
+      <div class="qr-meta">
+        <span><b id="qr-bytes">0</b> bytes</span>
+        <span><b id="qr-tokens">0</b> tokens</span>
+        <span><b id="qr-dur">0</b>s</span>
+      </div>
+      <div class="qr-url-row">
+        <input class="qr-url" id="qr-url" readonly onclick="this.select()">
+        <button class="copy-btn" onclick="copyUrl()">Copy</button>
+      </div>
+      <a class="dl-btn" id="dl-link" download="tinyvoice.bin">Download .bin</a>
+      <br>
+      <button class="new-btn" onclick="resetRecord()">Record another</button>
+    </div>
+  </div>
+
+  <!-- DECODE -->
+  <div class="panel" id="panel-decode">
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+      <div class="icon">📂</div>
+      <div class="label">Drop a file or QR screenshot</div>
+      <div class="hint">raw token bytes, QR image, or .bin file</div>
+    </div>
+    <input type="file" id="file-input" accept="*/*" onchange="handleFile(this.files[0])">
+
+    <div class="or-divider">— or scan with camera —</div>
+
+    <div class="cam-section">
+      <div class="cam-wrap" id="cam-wrap" style="display:none">
+        <video id="cam-video" autoplay playsinline muted></video>
+        <canvas id="cam-canvas"></canvas>
+        <div class="cam-overlay"><div class="cam-crosshair"></div></div>
+      </div>
+      <div class="cam-status" id="cam-status"></div>
+      <button class="cam-btn" id="cam-btn" onclick="toggleCam()">Start Camera</button>
+    </div>
+
+    <div class="dec-player" id="dec-player">
+      <button class="play-btn" id="play-btn" onclick="decodeAndPlay()">&#9654;</button>
+      <div class="dec-prog"><div class="dec-prog-fill" id="dec-prog"></div></div>
+      <div class="dec-status" id="dec-status"></div>
+    </div>
+  </div>
+
+  <a class="back-link" href="./">&larr; back to walkie-talkie</a>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+<script>
+const SR=16000, NFFT=1024, HOP=320, WLEN=1024, PAD=352;
+const MODEL_BASE='https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
+
+let encSess=null, decSess=null, istftWin=null, playCtx=null;
+let mic=null, actx=null, isRec=false, recChunks=[];
+
+// === MODE SWITCHING ===
+function setMode(m) {
+  document.querySelectorAll('.mode-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&m==='record')||(i===1&&m==='decode')));
+  document.getElementById('panel-record').classList.toggle('active', m==='record');
+  document.getElementById('panel-decode').classList.toggle('active', m==='decode');
+  if (m==='record') stopCam();
+}
+
+// === iSTFT ===
+function irfft(re,im,n){const fR=new Float32Array(n),fI=new Float32Array(n);const h=re.length;for(let i=0;i<h;i++){fR[i]=re[i];fI[i]=im[i]}for(let i=h;i<n;i++){fR[i]=fR[n-i];fI[i]=-fI[n-i]}let j=0;for(let i=0;i<n;i++){if(i<j){[fR[i],fR[j]]=[fR[j],fR[i]];[fI[i],fI[j]]=[fI[j],fI[i]]}let m=n>>1;while(m>=1&&j>=m){j-=m;m>>=1}j+=m}for(let s=2;s<=n;s*=2){const hs=s/2,a=2*Math.PI/s;for(let i=0;i<n;i+=s)for(let k=0;k<hs;k++){const c=Math.cos(a*k),sn=Math.sin(a*k),tR=c*fR[i+hs+k]-sn*fI[i+hs+k],tI=sn*fR[i+hs+k]+c*fI[i+hs+k];fR[i+hs+k]=fR[i+k]-tR;fI[i+hs+k]=fI[i+k]-tI;fR[i+k]+=tR;fI[i+k]+=tI}}const o=new Float32Array(n);for(let i=0;i<n;i++)o[i]=fR[i]/n;return o}
+function istft(mag,ph){const hN=NFFT/2+1,T=mag.length/hN,oS=(T-1)*HOP+WLEN;const o=new Float32Array(oS),wE=new Float32Array(oS);for(let t=0;t<T;t++){const off=t*hN,r=new Float32Array(hN),im=new Float32Array(hN);for(let f=0;f<hN;f++){r[f]=mag[off+f]*Math.cos(ph[off+f]);im[f]=mag[off+f]*Math.sin(ph[off+f])}const fr=irfft(r,im,NFFT),st=t*HOP;for(let i=0;i<WLEN;i++){o[st+i]+=fr[i]*istftWin[i];wE[st+i]+=istftWin[i]*istftWin[i]}}for(let i=0;i<oS;i++)if(wE[i]>1e-8)o[i]/=wE[i];return o.slice(PAD,oS-PAD)}
+
+// === ENCODER LOADING ===
+async function loadEncoder() {
+  const btn = document.getElementById('load-btn');
+  const st = document.getElementById('rec-status');
+  const prog = document.getElementById('rec-prog');
+  btn.disabled = true; btn.textContent = 'Loading...';
+
+  try {
+    st.textContent = 'Requesting microphone...';
+    mic = await navigator.mediaDevices.getUserMedia({audio:{sampleRate:SR,channelCount:1}});
+    actx = new AudioContext({sampleRate:SR});
+
+    st.textContent = 'Downloading encoder...';
+    const resp = await fetch(MODEL_BASE + 'encoder_50hz.onnx');
+    const total = +resp.headers.get('Content-Length') || 697000000;
+    const reader = resp.body.getReader();
+    const chunks = []; let received = 0;
+    while (true) {
+      const {done,value} = await reader.read();
+      if (done) break;
+      chunks.push(value); received += value.length;
+      prog.style.width = (received/total*90) + '%';
+      if (received%(20*1048576)<65536) st.textContent = `Encoder: ${(received/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB`;
+    }
+    const modelBytes = new Uint8Array(received);
+    let off = 0;
+    for (const c of chunks) { modelBytes.set(c, off); off += c.length; }
+
+    st.textContent = 'Initializing...';
+    prog.style.width = '95%';
+    encSess = await ort.InferenceSession.create(modelBytes.buffer, {executionProviders:['wasm']});
+
+    prog.style.width = '100%';
+    st.className = 'rec-status ok';
+    st.textContent = 'Ready — hold to record';
+    btn.style.display = 'none';
+  } catch (e) {
+    st.className = 'rec-status err';
+    st.textContent = e.message;
+    btn.disabled = false; btn.textContent = 'Retry';
+  }
+}
+
+// === RECORD ===
+let sp = null;
+function recDown(e) {
+  e.preventDefault();
+  if (!encSess || isRec) return;
+  isRec = true; recChunks = [];
+  const btn = document.getElementById('rec-btn');
+  btn.classList.add('recording');
+  document.getElementById('rec-status').textContent = 'Recording...';
+  document.getElementById('rec-status').className = 'rec-status';
+
+  const src = actx.createMediaStreamSource(mic);
+  sp = actx.createScriptProcessor(4096,1,1);
+  sp.onaudioprocess = ev => { if(isRec) recChunks.push(new Float32Array(ev.inputBuffer.getChannelData(0))); };
+  src.connect(sp); sp.connect(actx.destination);
+}
+
+async function recUp(e) {
+  if (e) e.preventDefault();
+  if (!isRec) return;
+  isRec = false;
+  if (sp) { sp.disconnect(); sp = null; }
+
+  const btn = document.getElementById('rec-btn');
+  btn.classList.remove('recording');
+  btn.classList.add('encoding');
+  btn.querySelector('.icon').textContent = '⏳';
+
+  const st = document.getElementById('rec-status');
+  const prog = document.getElementById('rec-prog');
+
+  const tl = recChunks.reduce((s,c) => s+c.length, 0);
+  const audio = new Float32Array(tl);
+  let off = 0;
+  for (const c of recChunks) { audio.set(c, off); off += c.length; }
+  const dur = (tl/SR).toFixed(1);
+
+  st.textContent = `Encoding ${dur}s...`;
+  prog.style.width = '50%';
+
+  try {
+    const r = await encSess.run({audio: new ort.Tensor('float32', audio, [1, tl])});
+    const tok = r.tokens.data;
+    prog.style.width = '100%';
+
+    const pk = new Uint8Array(tok.length * 2);
+    const dv = new DataView(pk.buffer);
+    for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
+
+    const b64 = btoa(String.fromCharCode(...pk));
+    const playUrl = `${location.origin}/play.html?v=${encodeURIComponent(b64)}`;
+
+    // Show QR
+    document.getElementById('qr-bytes').textContent = pk.length;
+    document.getElementById('qr-tokens').textContent = tok.length;
+    document.getElementById('qr-dur').textContent = dur;
+    document.getElementById('qr-url').value = playUrl;
+    document.getElementById('qr-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(playUrl);
+
+    // Download link
+    const blob = new Blob([pk], {type:'application/octet-stream'});
+    document.getElementById('dl-link').href = URL.createObjectURL(blob);
+
+    document.getElementById('qr-result').style.display = 'block';
+    st.className = 'rec-status ok';
+    st.textContent = `${dur}s → ${pk.length} bytes → QR ready`;
+  } catch (e) {
+    st.className = 'rec-status err';
+    st.textContent = e.message;
+  }
+
+  btn.classList.remove('encoding');
+  btn.querySelector('.icon').textContent = '🎙';
+}
+
+function resetRecord() {
+  document.getElementById('qr-result').style.display = 'none';
+  document.getElementById('rec-prog').style.width = '0%';
+  document.getElementById('rec-status').className = 'rec-status ok';
+  document.getElementById('rec-status').textContent = 'Ready — hold to record';
+}
+
+function copyUrl() {
+  const input = document.getElementById('qr-url');
+  navigator.clipboard.writeText(input.value).then(() => {
+    const btn = input.nextElementSibling;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// === DECODE: DROP ===
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('dragover'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+function handleFile(file) {
+  if (!file) return;
+  if (file.type.startsWith('image/')) {
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
+      const ctx = cv.getContext('2d'); ctx.drawImage(img,0,0);
+      const qr = jsQR(ctx.getImageData(0,0,cv.width,cv.height).data, cv.width, cv.height);
+      if (qr) handleQR(qr.data);
+      else setDecStatus('No QR found in image', 'err');
+    };
+    img.src = URL.createObjectURL(file);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => showDecPlayer(new Uint8Array(reader.result));
+  reader.readAsArrayBuffer(file);
+}
+
+function handleQR(str) {
+  try { const u=new URL(str); const v=u.searchParams.get('v'); if(v){const r=atob(decodeURIComponent(v));const d=new Uint8Array(r.length);for(let i=0;i<r.length;i++)d[i]=r.charCodeAt(i);showDecPlayer(d);return;}} catch{}
+  try { const r=atob(str);const d=new Uint8Array(r.length);for(let i=0;i<r.length;i++)d[i]=r.charCodeAt(i);if(d.length>=4&&d.length%2===0){showDecPlayer(d);return;}} catch{}
+  setDecStatus('QR does not contain voice data', 'err');
+}
+
+function setDecStatus(msg, cls='') {
+  const el = document.getElementById('dec-status');
+  el.className = 'dec-status' + (cls ? ' '+cls : '');
+  el.textContent = msg;
+}
+
+// === DECODE: CAMERA ===
+let camStream=null, scanIv=null;
+function toggleCam() {
+  if (camStream) { stopCam(); return; }
+  const btn=document.getElementById('cam-btn'), st=document.getElementById('cam-status'), video=document.getElementById('cam-video');
+  document.getElementById('cam-wrap').style.display = 'block';
+  btn.textContent='Starting...'; st.textContent='Requesting camera...';
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(stream => {
+    camStream=stream; video.srcObject=stream;
+    btn.textContent='Stop'; btn.classList.add('active');
+    st.textContent='Point at QR code';
+    const cv=document.getElementById('cam-canvas'), ctx=cv.getContext('2d',{willReadFrequently:true});
+    scanIv=setInterval(()=>{if(video.readyState!==video.HAVE_ENOUGH_DATA)return;cv.width=video.videoWidth;cv.height=video.videoHeight;ctx.drawImage(video,0,0);const qr=jsQR(ctx.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height);if(qr){stopCam();handleQR(qr.data);}},250);
+  }).catch(e=>{st.textContent='Camera: '+e.message;btn.textContent='Start Camera';document.getElementById('cam-wrap').style.display='none';});
+}
+function stopCam() {
+  if(scanIv){clearInterval(scanIv);scanIv=null;}
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+  document.getElementById('cam-btn').textContent='Start Camera';
+  document.getElementById('cam-btn').classList.remove('active');
+  document.getElementById('cam-status').textContent='';
+  document.getElementById('cam-wrap').style.display='none';
+}
+
+// === DECODE: PLAYER ===
+let decData=null, decNTokens=0, audioBuffer=null;
+
+function showDecPlayer(data) {
+  if (data.length<4||data.length%2!==0) { setDecStatus('Invalid data','err'); return; }
+  decData=data; decNTokens=data.length/2; audioBuffer=null;
+  document.getElementById('dec-player').style.display='block';
+  setDecStatus(`${data.length} bytes, ${decNTokens} tokens, ~${(decNTokens/50).toFixed(1)}s — tap play`);
+}
+
+async function decodeAndPlay() {
+  const btn=document.getElementById('play-btn'), st=document.getElementById('dec-status'), prog=document.getElementById('dec-prog');
+
+  if (audioBuffer) {
+    if(!playCtx||playCtx.state==='closed') playCtx=new AudioContext({sampleRate:SR});
+    if(playCtx.state==='suspended') await playCtx.resume();
+    const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
+    btn.className='play-btn playing';btn.innerHTML='&#9646;&#9646;';
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';};
+    src.start(); return;
+  }
+
+  btn.disabled=true;btn.className='play-btn loading';btn.innerHTML='&#8987;';
+  try {
+    st.textContent='Loading iSTFT...';prog.style.width='5%';
+    const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
+
+    st.textContent='Loading decoder...';
+    const resp=await fetch(MODEL_BASE+'decoder_50hz.onnx');
+    const total=+resp.headers.get('Content-Length')||141000000;
+    const reader=resp.body.getReader();const chunks=[];let received=0;
+    while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);received+=value.length;prog.style.width=(5+received/total*70)+'%';
+      if(received%(20*1048576)<65536) st.textContent=`Decoder: ${(received/1048576).toFixed(0)} MB`;}
+    const mb=new Uint8Array(received);let off=0;for(const c of chunks){mb.set(c,off);off+=c.length;}
+
+    st.textContent='Initializing...';prog.style.width='80%';
+    decSess=await ort.InferenceSession.create(mb.buffer,{executionProviders:['wasm']});
+
+    st.textContent='Decoding...';prog.style.width='90%';
+    const tokens=new BigInt64Array(decNTokens);
+    const dv=new DataView(decData.buffer,decData.byteOffset,decData.byteLength);
+    for(let i=0;i<decNTokens;i++) tokens[i]=BigInt(dv.getUint16(i*2,true));
+
+    const result=await decSess.run({tokens:new ort.Tensor('int64',tokens,[1,decNTokens])});
+    const audio=istft(result.magnitude.data,result.phase.data);
+    prog.style.width='100%';
+
+    playCtx=new AudioContext({sampleRate:SR});
+    audioBuffer=playCtx.createBuffer(1,audio.length,SR);
+    audioBuffer.getChannelData(0).set(audio);
+
+    const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
+    btn.className='play-btn playing';btn.innerHTML='&#9646;&#9646;';btn.disabled=false;
+    st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s from ${decData.length} bytes`;
+    src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';};
+    src.start();
+  } catch(e) {
+    st.className='dec-status err';st.textContent=e.message;
+    btn.className='play-btn';btn.innerHTML='&#9654;';btn.disabled=false;
+  }
+}
+</script>
+</body>
+</html>
