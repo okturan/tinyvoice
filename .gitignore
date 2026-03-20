@@ -6,3 +6,5 @@ dist/
 .dev.vars
 .DS_Store
 dist/
+.claude/worktrees/
+.playwright-mcp/
