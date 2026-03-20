@@ -114,6 +114,24 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 }
 .hex-stream .b.done { color: var(--overlay); }
 
+/* ── Quality picker ───────────────── */
+.quality-picker {
+  display: flex; gap: 4px; margin-bottom: 10px;
+  background: var(--mantle); border-radius: 8px; padding: 3px;
+}
+.quality-opt {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  padding: 6px 4px; border-radius: 6px; cursor: pointer;
+  transition: all 0.12s; text-align: center;
+}
+.quality-opt:hover { background: var(--surface0); }
+.quality-opt input { display: none; }
+.quality-opt input:checked + .quality-label { color: var(--text); }
+.quality-opt input:checked ~ .quality-desc { color: var(--subtext); }
+.quality-opt:has(input:checked) { background: var(--surface0); }
+.quality-label { font-size: 0.72rem; font-weight: 600; color: var(--overlay); transition: color 0.12s; }
+.quality-desc { font-size: 0.5rem; color: var(--surface2); margin-top: 1px; transition: color 0.12s; }
+
 /* ── Decode panel ──────────────────── */
 .dropzone { border:2px dashed var(--surface1); border-radius:12px; padding:28px 16px; cursor:pointer; transition:all 0.15s; text-align:center; margin-bottom:12px; }
 .dropzone:hover,.dropzone.dragover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 5%,var(--base)); }
@@ -177,9 +195,26 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
       </button>
       <div class="rec-hint">hold to record &middot; release to encode</div>
     </div>
+    <div class="quality-picker">
+      <label class="quality-opt">
+        <input type="radio" name="quality" value="12_5hz" checked onchange="onQualityChange()">
+        <span class="quality-label">12.5hz</span>
+        <span class="quality-desc">tiny QR &middot; ~144B</span>
+      </label>
+      <label class="quality-opt">
+        <input type="radio" name="quality" value="25hz" onchange="onQualityChange()">
+        <span class="quality-label">25hz</span>
+        <span class="quality-desc">balanced &middot; ~288B</span>
+      </label>
+      <label class="quality-opt">
+        <input type="radio" name="quality" value="50hz" onchange="onQualityChange()">
+        <span class="quality-label">50hz</span>
+        <span class="quality-desc">best quality &middot; ~576B</span>
+      </label>
+    </div>
     <div class="rec-progress"><div class="rec-progress-fill" id="rec-prog"></div></div>
     <div class="rec-status" id="rec-status">Load models first</div>
-    <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
+    <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Models</button>
     <div class="qr-result" id="qr-result">
       <div class="qr-main">
         <img id="qr-img" width="180" height="180" alt="QR code" style="display:none">
@@ -245,8 +280,25 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 const SR=16000, NFFT=1024, HOP=320, WLEN=1024, PAD=352;
 const MODEL_BASE='https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
 
-let encSess=null, compSess=null, decSess=null, istftWin=null, playCtx=null;
+let encSess=null, compSessions={}, decSessions={}, istftWin=null, playCtx=null;
 let mic=null, actx=null, isRec=false, recChunks=[];
+let currentQuality = '12_5hz';
+
+function getQuality() {
+  return document.querySelector('input[name="quality"]:checked')?.value || '12_5hz';
+}
+function onQualityChange() {
+  currentQuality = getQuality();
+  // Check if we need to load new compressor/decoder
+  const st = document.getElementById('rec-status');
+  if (encSess && !compSessions[currentQuality]) {
+    st.textContent = `Switch to ${currentQuality} — will download compressor on first use`;
+    st.className = 'rec-status';
+  } else if (encSess) {
+    st.textContent = `Ready (${currentQuality})`;
+    st.className = 'rec-status ok';
+  }
+}
 
 // === IndexedDB Cache (shared with main app) ===
 function openDB() {
@@ -320,6 +372,23 @@ function setMode(m) {
 function irfft(re,im,n){const fR=new Float32Array(n),fI=new Float32Array(n);const h=re.length;for(let i=0;i<h;i++){fR[i]=re[i];fI[i]=im[i]}for(let i=h;i<n;i++){fR[i]=fR[n-i];fI[i]=-fI[n-i]}let j=0;for(let i=0;i<n;i++){if(i<j){[fR[i],fR[j]]=[fR[j],fR[i]];[fI[i],fI[j]]=[fI[j],fI[i]]}let m=n>>1;while(m>=1&&j>=m){j-=m;m>>=1}j+=m}for(let s=2;s<=n;s*=2){const hs=s/2,a=2*Math.PI/s;for(let i=0;i<n;i+=s)for(let k=0;k<hs;k++){const c=Math.cos(a*k),sn=Math.sin(a*k),tR=c*fR[i+hs+k]-sn*fI[i+hs+k],tI=sn*fR[i+hs+k]+c*fI[i+hs+k];fR[i+hs+k]=fR[i+k]-tR;fI[i+hs+k]=fI[i+k]-tI;fR[i+k]+=tR;fI[i+k]+=tI}}const o=new Float32Array(n);for(let i=0;i<n;i++)o[i]=fR[i]/n;return o}
 function istft(mag,ph){const hN=NFFT/2+1,T=mag.length/hN,oS=(T-1)*HOP+WLEN;const o=new Float32Array(oS),wE=new Float32Array(oS);for(let t=0;t<T;t++){const off=t*hN,r=new Float32Array(hN),im=new Float32Array(hN);for(let f=0;f<hN;f++){r[f]=mag[off+f]*Math.cos(ph[off+f]);im[f]=mag[off+f]*Math.sin(ph[off+f])}const fr=irfft(r,im,NFFT),st=t*HOP;for(let i=0;i<WLEN;i++){o[st+i]+=fr[i]*istftWin[i];wE[st+i]+=istftWin[i]*istftWin[i]}}for(let i=0;i<oS;i++)if(wE[i]>1e-8)o[i]/=wE[i];return o.slice(PAD,oS-PAD)}
 
+// === LOAD COMPRESSOR ON DEMAND ===
+async function loadCompressor(quality, st, prog, pStart, pEnd) {
+  if (compSessions[quality]) return; // already loaded
+  const name = `compressor_${quality}.onnx`;
+  const bytes = await dlModel(name, p => { if(prog) prog.style.width = (pStart + p*(pEnd-pStart))+'%'; }, st);
+  if(st) st.textContent = `Initializing ${quality} compressor...`;
+  compSessions[quality] = await ort.InferenceSession.create(bytes, {executionProviders:['wasm']});
+}
+
+async function loadDecoder(quality, st, prog, pStart, pEnd) {
+  if (decSessions[quality]) return;
+  const name = `decoder_${quality}.onnx`;
+  const bytes = await dlModel(name, p => { if(prog) prog.style.width = (pStart + p*(pEnd-pStart))+'%'; }, st);
+  if(st) st.textContent = `Initializing ${quality} decoder...`;
+  decSessions[quality] = await ort.InferenceSession.create(bytes, {executionProviders:['wasm']});
+}
+
 // === ENCODER LOADING ===
 async function loadEncoder() {
   const btn = document.getElementById('load-btn');
@@ -338,15 +407,13 @@ async function loadEncoder() {
     prog.style.width = '72%';
     encSess = await ort.InferenceSession.create(encBytes, {executionProviders:['wasm']});
 
-    // Load 12.5hz compressor (smaller QR codes)
-    const compBytes = await dlModel('compressor_12_5hz.onnx', p => { prog.style.width = (72+p*18)+'%'; }, st);
-    st.textContent = 'Initializing compressor...';
-    prog.style.width = '92%';
-    compSess = await ort.InferenceSession.create(compBytes, {executionProviders:['wasm']});
+    // Load selected quality compressor
+    currentQuality = getQuality();
+    await loadCompressor(currentQuality, st, prog, 72, 92);
 
     prog.style.width = '100%';
     st.className = 'rec-status ok';
-    st.textContent = 'Ready (12.5hz) — hold to record';
+    st.textContent = `Ready (${currentQuality}) — hold to record`;
     btn.style.display = 'none';
     document.getElementById('rec-btn').classList.remove('disabled');
   } catch (e) {
@@ -408,12 +475,19 @@ async function recUp(e) {
   prog.style.width = '50%';
 
   try {
+    // Ensure compressor for selected quality is loaded
+    currentQuality = getQuality();
+    if (!compSessions[currentQuality]) {
+      st.textContent = `Loading ${currentQuality} compressor...`;
+      await loadCompressor(currentQuality, st, prog, 50, 65);
+    }
+
     // Two-stage: encoder → features → compressor → tokens
-    st.textContent = 'Encoding (stage 1/2)...';
+    st.textContent = `Encoding (${currentQuality})...`;
     const feats = await encSess.run({audio: new ort.Tensor('float32', audio, [1, tl])});
-    prog.style.width = '75%';
-    st.textContent = 'Compressing (stage 2/2)...';
-    const r = await compSess.run({features: feats.features});
+    prog.style.width = '80%';
+    st.textContent = `Compressing (${currentQuality})...`;
+    const r = await compSessions[currentQuality].run({features: feats.features});
     const tok = r.tokens.data;
     prog.style.width = '100%';
 
@@ -475,6 +549,7 @@ async function recUp(e) {
 
     // Store for preview playback
     window._previewTokens = pk;
+    window._previewQuality = currentQuality;
 
     st.className = 'rec-status ok';
     st.textContent = `${dur}s → ${pk.length} bytes → QR ready`;
@@ -569,9 +644,19 @@ function stopCam() {
 // === DECODE: PLAYER ===
 let decData=null, decNTokens=0, audioBuffer=null;
 
+function guessQuality(nTokens) {
+  // Heuristic: 12.5hz ≈ 12.5 tok/s, 25hz ≈ 25, 50hz ≈ 50
+  // For a 5s clip: 12.5hz=63, 25hz=125, 50hz=250
+  // Use ratio: if tokens < 80 probably 12.5hz, < 160 probably 25hz, else 50hz
+  if (nTokens <= 100) return '12_5hz';
+  if (nTokens <= 200) return '25hz';
+  return '50hz';
+}
+
 function showDecPlayer(data) {
   if (data.length<4||data.length%2!==0) { setDecStatus('Invalid data','err'); return; }
   decData=data; decNTokens=data.length/2; audioBuffer=null;
+  window._decQuality = guessQuality(decNTokens);
 
   // Build hex display
   const player = document.getElementById('dec-player');
@@ -594,7 +679,9 @@ function showDecPlayer(data) {
     window._decHexSpans.push(span);
   }
 
-  setDecStatus(`${data.length} bytes, ${decNTokens} tokens, ~${(decNTokens/50).toFixed(1)}s — tap play`);
+  const gq = window._decQuality;
+  const estRate = gq === '12_5hz' ? 12.5 : gq === '25hz' ? 25 : 50;
+  setDecStatus(`${data.length}B, ${decNTokens} tok, ~${(decNTokens/estRate).toFixed(1)}s (${gq}) — tap play`);
 }
 
 async function decodeAndPlay() {
@@ -614,9 +701,8 @@ async function decodeAndPlay() {
     st.textContent='Loading iSTFT...';prog.style.width='5%';
     const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
 
-    const mb=await dlModel('decoder_12_5hz.onnx', p => { prog.style.width=(5+p*70)+'%'; }, st);
-    st.textContent='Initializing decoder...';prog.style.width='80%';
-    decSess=await ort.InferenceSession.create(mb,{executionProviders:['wasm']});
+    const dq = window._decQuality || '12_5hz';
+    await loadDecoder(dq, st, prog, 5, 80);
 
     // Animate hex bytes lighting up during decode
     st.textContent='Decoding...';prog.style.width='90%';
@@ -633,7 +719,8 @@ async function decodeAndPlay() {
     const dv=new DataView(decData.buffer,decData.byteOffset,decData.byteLength);
     for(let i=0;i<decNTokens;i++) tokens[i]=BigInt(dv.getUint16(i*2,true));
 
-    const result=await decSess.run({tokens:new ort.Tensor('int64',tokens,[1,decNTokens])});
+    const dq2 = window._decQuality || '12_5hz';
+    const result=await decSessions[dq2].run({tokens:new ort.Tensor('int64',tokens,[1,decNTokens])});
     const audio=istft(result.magnitude.data,result.phase.data);
     prog.style.width='100%';
 
@@ -662,17 +749,17 @@ async function previewEncoded() {
   const btn = document.getElementById('preview-btn');
   const st = document.getElementById('rec-status');
 
-  // Need decoder to preview
-  if (!decSess) {
+  // Need decoder to preview — use same quality as recording
+  const q = window._previewQuality || currentQuality;
+  if (!decSessions[q]) {
     btn.disabled = true;
-    btn.textContent = 'Loading decoder...';
+    btn.textContent = `Loading ${q} decoder...`;
     try {
       if (!istftWin) {
         const wr = await fetch(MODEL_BASE + 'istft_window.json');
         istftWin = new Float32Array(await wr.json());
       }
-      const mb = await dlModel('decoder_12_5hz.onnx', () => {}, st);
-      decSess = await ort.InferenceSession.create(mb, {executionProviders:['wasm']});
+      await loadDecoder(q, st, null, 0, 100);
     } catch(e) {
       st.className = 'rec-status err'; st.textContent = e.message;
       btn.disabled = false; btn.textContent = '\u25B6 Preview'; return;
@@ -686,7 +773,7 @@ async function previewEncoded() {
     const dv = new DataView(pk.buffer, pk.byteOffset, pk.byteLength);
     for (let i = 0; i < nTokens; i++) tokens[i] = BigInt(dv.getUint16(i*2, true));
 
-    const result = await decSess.run({tokens: new ort.Tensor('int64', tokens, [1, nTokens])});
+    const result = await decSessions[q].run({tokens: new ort.Tensor('int64', tokens, [1, nTokens])});
     const audio = istft(result.magnitude.data, result.phase.data);
 
     if (!playCtx || playCtx.state === 'closed') playCtx = new AudioContext({sampleRate: SR});
