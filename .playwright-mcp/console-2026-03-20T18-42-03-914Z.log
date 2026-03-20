@@ -1,0 +1,11 @@
+[     304ms] Error: `Tooltip` must be used within `TooltipProvider`
+    at h (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:79:6861)
+    at _1 (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:128:17402)
+    at Ai (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:48243)
+    at Li (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:71067)
+    at Id (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:81419)
+    at b9 (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:117240)
+    at Gm (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:116284)
+    at ls (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:116114)
+    at v9 (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:112897)
+    at L9 (https://tinyvoice.pages.dev/assets/index-CfXCtz3t.js:48:124728)
