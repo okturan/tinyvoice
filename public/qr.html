@@ -131,6 +131,8 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .quality-opt:has(input:checked) { background: var(--surface0); }
 .quality-label { font-size: 0.72rem; font-weight: 600; color: var(--overlay); transition: color 0.12s; }
 .quality-desc { font-size: 0.5rem; color: var(--surface2); margin-top: 1px; transition: color 0.12s; }
+.cache-dot { font-size: 0.55rem; color: var(--surface2); }
+.cache-dot.cached { color: var(--green); }
 
 /* ── Decode panel ──────────────────── */
 .dropzone { border:2px dashed var(--surface1); border-radius:12px; padding:28px 16px; cursor:pointer; transition:all 0.15s; text-align:center; margin-bottom:12px; }
@@ -198,17 +200,17 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="quality-picker">
       <label class="quality-opt">
         <input type="radio" name="quality" value="12_5hz" checked onchange="onQualityChange()">
-        <span class="quality-label">12.5hz</span>
+        <span class="quality-label">12.5hz <span class="cache-dot" id="cache-12_5hz">↓</span></span>
         <span class="quality-desc">tiny QR &middot; ~144B</span>
       </label>
       <label class="quality-opt">
         <input type="radio" name="quality" value="25hz" onchange="onQualityChange()">
-        <span class="quality-label">25hz</span>
+        <span class="quality-label">25hz <span class="cache-dot" id="cache-25hz">↓</span></span>
         <span class="quality-desc">balanced &middot; ~288B</span>
       </label>
       <label class="quality-opt">
         <input type="radio" name="quality" value="50hz" onchange="onQualityChange()">
-        <span class="quality-label">50hz</span>
+        <span class="quality-label">50hz <span class="cache-dot" id="cache-50hz">↓</span></span>
         <span class="quality-desc">best quality &middot; ~576B</span>
       </label>
     </div>
@@ -272,7 +274,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     </div>
   </div>
 
-  <a class="back-link" href="./">&larr; back to walkie-talkie</a>
+  <a class="back-link" href="./">&larr; back to PTT</a>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
@@ -289,7 +291,6 @@ function getQuality() {
 }
 function onQualityChange() {
   currentQuality = getQuality();
-  // Check if we need to load new compressor/decoder
   const st = document.getElementById('rec-status');
   if (encSess && !compSessions[currentQuality]) {
     st.textContent = `Switch to ${currentQuality} — will download compressor on first use`;
@@ -299,6 +300,35 @@ function onQualityChange() {
     st.className = 'rec-status ok';
   }
 }
+
+// Check IndexedDB for cached models and mark quality options
+async function updateCacheIndicators() {
+  const models = [
+    { key: 'encoder.onnx', el: 'cache-encoder' },
+    { key: 'compressor_12_5hz.onnx', el: 'cache-12_5hz' },
+    { key: 'compressor_25hz.onnx', el: 'cache-25hz' },
+    { key: 'compressor_50hz.onnx', el: 'cache-50hz' },
+    { key: 'decoder_12_5hz.onnx', el: 'cache-dec-12_5hz' },
+    { key: 'decoder_25hz.onnx', el: 'cache-dec-25hz' },
+    { key: 'decoder_50hz.onnx', el: 'cache-dec-50hz' },
+  ];
+  for (const m of models) {
+    const el = document.getElementById(m.el);
+    if (!el) continue;
+    const cached = await getCached(m.key);
+    if (cached && cached.byteLength > 1048576) {
+      el.textContent = '✓';
+      el.title = `Cached (${(cached.byteLength/1048576).toFixed(0)} MB)`;
+      el.classList.add('cached');
+    } else {
+      el.textContent = '↓';
+      el.title = 'Not cached — will download';
+      el.classList.remove('cached');
+    }
+  }
+}
+// Run on page load
+updateCacheIndicators();
 
 // === IndexedDB Cache (shared with main app) ===
 function openDB() {
@@ -416,6 +446,7 @@ async function loadEncoder() {
     st.textContent = `Ready (${currentQuality}) — hold to record`;
     btn.style.display = 'none';
     document.getElementById('rec-btn').classList.remove('disabled');
+    updateCacheIndicators();
   } catch (e) {
     st.className = 'rec-status err';
     st.textContent = e.message;
