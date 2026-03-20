@@ -83,7 +83,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                 disabled={codec.modelsLoaded || codec.state === "loading"}
                 className="flex-1 py-2 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               >
-                {codec.state === "loading" ? "Downloading..." : codec.modelsLoaded ? "Downloaded" : "Download Models"}
+                {codec.state === "loading" ? "Loading..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Load from cache" : "Download Models"}
               </button>
               {confirmClear ? (
                 <div className="flex gap-1">

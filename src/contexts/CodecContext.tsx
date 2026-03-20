@@ -2,13 +2,14 @@ import {
   createContext,
   useContext,
   useState,
+  useEffect,
   useCallback,
   useRef,
   type ReactNode,
 } from "react";
 import { loadModel, type ModelLoadProgress } from "@/lib/model-loader";
 import { MAGIC } from "@/lib/constants";
-import { clearModelCache as clearCache } from "@/lib/model-cache";
+import { clearModelCache as clearCache, getCached } from "@/lib/model-cache";
 import { istft } from "@/lib/istft";
 
 export type CodecState = "idle" | "loading" | "ready" | "error";
@@ -32,6 +33,7 @@ interface CodecContextValue {
   statusText: string;
   progress: number;
   modelsLoaded: boolean;
+  modelsCached: boolean;
   loadModels: () => Promise<void>;
   abortLoading: () => void;
   clearModelCache: () => Promise<void>;
@@ -84,6 +86,26 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const [statusText, setStatusText] = useState("Not loaded");
   const [progress, setProgress] = useState(0);
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelsCached, setModelsCached] = useState(false);
+
+  // Check if core models are already cached in IndexedDB on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const [enc, comp, dec] = await Promise.all([
+          getCached("encoder.onnx"),
+          getCached("compressor_50hz.onnx"),
+          getCached("decoder_50hz.onnx"),
+        ]);
+        if (enc && comp && dec) {
+          setModelsCached(true);
+          setStatusText("Cached \u2014 tap Load to initialize");
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   const encSessRef = useRef<ort.InferenceSession | null>(null);
   const compSessions = useRef<SessionCache>({});
@@ -265,6 +287,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
         statusText,
         progress,
         modelsLoaded,
+        modelsCached,
         loadModels,
         abortLoading,
         clearModelCache: clearModelCacheFn,
