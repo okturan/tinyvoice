@@ -18,8 +18,8 @@ export default function QRPage() {
   const defaultTab = voiceB64 ? "decode" : "record";
 
   return (
-    <div className="min-h-screen bg-[var(--base)] text-[var(--text)]">
-      <div className="max-w-[520px] mx-auto flex flex-col min-h-screen">
+    <div className="min-h-screen bg-[var(--base)] text-[var(--text)] flex items-center justify-center">
+      <div className="w-full max-w-[520px] flex flex-col h-[min(100vh,760px)] mx-auto my-auto">
         <TopBar />
 
         <div className="flex-1 px-4 py-4">

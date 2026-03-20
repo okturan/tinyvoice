@@ -165,8 +165,8 @@ export function PTTPage() {
 
   return (
     <>
-      <div className="noise min-h-screen bg-[var(--base)] text-[var(--text)] relative">
-        <div className="relative z-10 max-w-[480px] mx-auto flex flex-col min-h-screen">
+      <div className="noise min-h-screen bg-[var(--base)] text-[var(--text)] relative flex items-center justify-center">
+        <div className="relative z-10 w-full max-w-[480px] flex flex-col h-[min(100vh,760px)] mx-auto my-auto">
 
           {/* ── Top Bar ── */}
           <header className="flex items-center h-11 px-4 border-b border-[var(--surface0)]/50 bg-[var(--mantle)]/60 backdrop-blur-sm flex-shrink-0">
@@ -393,7 +393,7 @@ export function PTTPage() {
           </div>
 
           {/* ── Activity Log ── */}
-          <div className="flex-1 min-h-0 px-3 pb-3">
+          <div className="flex-1 min-h-[120px] px-3 pb-3 overflow-hidden">
             <div className="h-full rounded-lg border border-[var(--surface0)]/30 bg-[var(--mantle)]/40 backdrop-blur-sm overflow-hidden flex flex-col relative scanlines">
               <div className="px-3 py-1.5 border-b border-[var(--surface0)]/30 flex items-center gap-1.5">
                 <div className="w-1 h-1 rounded-full bg-[var(--green)]" />
