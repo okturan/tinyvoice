@@ -307,7 +307,7 @@ if (_lastRoom) roomInput.value = _lastRoom;
 roomInput.addEventListener('input', updateCreateBtn);
 startRoomPoll();
 
-let ws = null, encSess = null, decSess = null, istftWin = null;
+let ws = null, encSess = null, compSess = null, decSess = null, istftWin = null;
 let mic = null, actx = null, playCtx = null, isRec = false, chunks = [];
 let totalSent = 0, totalRecv = 0;
 let modelsLoaded = false;
@@ -535,24 +535,28 @@ async function loadModels() {
     istftWin = new Float32Array(await wr.json());
     log('iSTFT window loaded', 'ok');
 
-    // Decoder
-    st.textContent = 'Decoder...';
-    log('Loading decoder...', 'info');
-    const decName = IS_MOBILE ? 'decoder_fp16.onnx' : 'decoder.onnx';
-    const encName = IS_MOBILE ? 'encoder_50hz_fp16.onnx' : 'encoder_50hz.onnx';
-    if (IS_MOBILE) log('Using fp16 models (mobile)', 'dim');
-
-    const decBuf = await loadModel(decName, p => { pr.style.width = (p*20)+'%'; });
+    // Decoder (50hz decompressor + Vocos)
+    st.textContent = 'Decoder 50hz (135 MB)...';
+    log('Loading decoder_50hz...', 'info');
+    const decBuf = await loadModel('decoder_50hz.onnx', p => { pr.style.width = (p*15)+'%'; });
     decSess = await ort.InferenceSession.create(decBuf, { executionProviders: ['wasm'] });
-    log('Decoder ready', 'ok');
-    pr.style.width = '20%';
+    log('Decoder ready (50hz)', 'ok');
+    pr.style.width = '15%';
 
-    // Encoder
-    st.textContent = 'Encoder...';
-    log('Loading encoder...', 'info');
-    const encBuf = await loadModel(encName, p => { pr.style.width = (20+p*70)+'%'; });
+    // Shared encoder (WavLM)
+    st.textContent = 'Encoder (595 MB)...';
+    log('Loading encoder (shared WavLM)...', 'info');
+    const encBuf = await loadModel('encoder.onnx', p => { pr.style.width = (15+p*65)+'%'; });
     encSess = await ort.InferenceSession.create(encBuf, { executionProviders: ['wasm'] });
     log('Encoder ready', 'ok');
+    pr.style.width = '80%';
+
+    // Compressor (50hz)
+    st.textContent = 'Compressor 50hz (70 MB)...';
+    log('Loading compressor_50hz...', 'info');
+    const compBuf = await loadModel('compressor_50hz.onnx', p => { pr.style.width = (80+p*15)+'%'; });
+    compSess = await ort.InferenceSession.create(compBuf, { executionProviders: ['wasm'] });
+    log('Compressor ready (50hz)', 'ok');
     pr.style.width = '95%';
 
     // Mic
@@ -564,9 +568,9 @@ async function loadModels() {
 
     pr.style.width = '100%';
     dot.className = 'dot on';
-    st.textContent = 'Ready';
+    st.textContent = 'Ready — encoder + 50hz comp/dec';
     modelsLoaded = true;
-    btn.textContent = 'Models Loaded';
+    btn.textContent = 'Loaded (50hz)';
     log('Push to talk!', 'ok');
     updatePTT();
   } catch (e) {
@@ -639,7 +643,7 @@ async function loadModel(name, onProgress) {
    Push-to-Talk
    ══════════════════════════════════════════════════════ */
 function updatePTT() {
-  const ready = encSess && decSess && ws && ws.readyState === 1;
+  const ready = encSess && compSess && decSess && ws && ws.readyState === 1;
   document.getElementById('ptt-btn').classList.toggle('disabled', !ready);
 }
 
@@ -686,7 +690,9 @@ async function pttUp(e) {
 
   try {
     const t0 = performance.now();
-    const r = await encSess.run({ audio: new ort.Tensor('float32', audio, [1, tl]) });
+    // Two-step: encoder (WavLM) → compressor (50hz) → tokens
+    const feats = await encSess.run({ audio: new ort.Tensor('float32', audio, [1, tl]) });
+    const r = await compSess.run({ features: feats.features });
     const tok = r.tokens.data;
     const t1 = performance.now();
 
