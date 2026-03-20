@@ -56,12 +56,19 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 .new-btn { display:inline-block; margin-top:12px; padding:7px 14px; border:1px solid var(--surface0); background:none; color:var(--overlay); border-radius:7px; cursor:pointer; font-family:'Inter',sans-serif; font-size:0.72rem; transition:all 0.1s; }
 .new-btn:hover { background:var(--surface0); color:var(--text); }
 
-/* ── Hex stream ──────────────────── */
+/* ── Hex + QR split ──────────────── */
+.qr-split {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px;
+  align-items: start; margin-bottom: 12px;
+}
+.qr-right { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.qr-right img { border-radius: 6px; background: white; padding: 6px; }
+
 .hex-stream {
   background: var(--mantle); border-radius: 8px; padding: 10px;
   font-family: 'JetBrains Mono', monospace; font-size: 0.58rem;
-  line-height: 1.7; word-break: break-all; max-height: 80px;
-  overflow-y: auto; margin-bottom: 12px; text-align: left;
+  line-height: 1.7; word-break: break-all; max-height: 160px;
+  overflow-y: auto; text-align: left;
   color: var(--surface2);
 }
 .hex-stream .b {
@@ -141,20 +148,25 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     <div class="rec-status" id="rec-status">Load models first</div>
     <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
-      <div class="hex-stream" id="hex-stream"></div>
-      <img id="qr-img" width="200" height="200" alt="QR code" style="display:none">
-      <div class="qr-meta">
-        <span><b id="qr-bytes">0</b> bytes</span>
-        <span><b id="qr-tokens">0</b> tokens</span>
-        <span><b id="qr-dur">0</b>s</span>
+      <div class="qr-split">
+        <div class="hex-stream" id="hex-stream"></div>
+        <div class="qr-right">
+          <img id="qr-img" width="160" height="160" alt="QR code" style="display:none">
+          <div class="qr-meta">
+            <span><b id="qr-bytes">0</b> B</span>
+            <span><b id="qr-tokens">0</b> tok</span>
+            <span><b id="qr-dur">0</b>s</span>
+          </div>
+        </div>
       </div>
       <div class="qr-url-row">
         <input class="qr-url" id="qr-url" readonly onclick="this.select()">
         <button class="copy-btn" onclick="copyUrl()">Copy</button>
       </div>
-      <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png">Download QR</a>
-      <br>
-      <button class="new-btn" onclick="resetRecord()">Record another</button>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png" style="flex:1;text-align:center">Download QR</a>
+        <button class="new-btn" onclick="resetRecord()" style="flex:1">Record another</button>
+      </div>
     </div>
   </div>
 
@@ -503,7 +515,28 @@ let decData=null, decNTokens=0, audioBuffer=null;
 function showDecPlayer(data) {
   if (data.length<4||data.length%2!==0) { setDecStatus('Invalid data','err'); return; }
   decData=data; decNTokens=data.length/2; audioBuffer=null;
-  document.getElementById('dec-player').style.display='block';
+
+  // Build hex display
+  const player = document.getElementById('dec-player');
+  player.style.display='block';
+  let hexEl = document.getElementById('dec-hex');
+  if (!hexEl) {
+    hexEl = document.createElement('div');
+    hexEl.id = 'dec-hex';
+    hexEl.className = 'hex-stream';
+    player.insertBefore(hexEl, player.firstChild);
+  }
+  hexEl.innerHTML = '';
+  window._decHexSpans = [];
+  for (let i = 0; i < data.length; i++) {
+    const span = document.createElement('span');
+    span.className = 'b';
+    span.textContent = data[i].toString(16).padStart(2, '0');
+    hexEl.appendChild(span);
+    if (i < data.length - 1) hexEl.appendChild(document.createTextNode(' '));
+    window._decHexSpans.push(span);
+  }
+
   setDecStatus(`${data.length} bytes, ${decNTokens} tokens, ~${(decNTokens/50).toFixed(1)}s — tap play`);
 }
 
@@ -528,7 +561,17 @@ async function decodeAndPlay() {
     st.textContent='Initializing decoder...';prog.style.width='80%';
     decSess=await ort.InferenceSession.create(mb,{executionProviders:['wasm']});
 
+    // Animate hex bytes lighting up during decode
     st.textContent='Decoding...';prog.style.width='90%';
+    const spans = window._decHexSpans || [];
+    if (spans.length) {
+      const step = Math.max(1, Math.floor(spans.length / 30));
+      for (let i = 0; i < spans.length; i += step) {
+        for (let j = i; j < Math.min(i + step, spans.length); j++) spans[j].classList.add('lit');
+        await new Promise(r => setTimeout(r, 20));
+      }
+    }
+
     const tokens=new BigInt64Array(decNTokens);
     const dv=new DataView(decData.buffer,decData.byteOffset,decData.byteLength);
     for(let i=0;i<decNTokens;i++) tokens[i]=BigInt(dv.getUint16(i*2,true));
@@ -537,13 +580,16 @@ async function decodeAndPlay() {
     const audio=istft(result.magnitude.data,result.phase.data);
     prog.style.width='100%';
 
+    // Fade hex bytes after decode
+    if (spans.length) spans.forEach(s => { s.classList.remove('lit'); s.classList.add('done'); });
+
     playCtx=new AudioContext({sampleRate:SR});
     audioBuffer=playCtx.createBuffer(1,audio.length,SR);
     audioBuffer.getChannelData(0).set(audio);
 
     const src=playCtx.createBufferSource();src.buffer=audioBuffer;src.connect(playCtx.destination);
     btn.className='play-btn playing';btn.innerHTML='&#9646;&#9646;';btn.disabled=false;
-    st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s from ${decData.length} bytes`;
+    st.className='dec-status ok';st.textContent=`${(audio.length/SR).toFixed(1)}s decoded from ${decData.length} bytes`;
     src.onended=()=>{btn.className='play-btn';btn.innerHTML='&#9654;';};
     src.start();
   } catch(e) {
