@@ -2,35 +2,94 @@
 // Room: per-room Durable Object that relays token packets
 // Lobby: singleton DO that tracks active rooms for the room list
 
+const ALARM_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
+const STALE_THRESHOLD_MS = 10 * 60 * 1000;  // 10 minutes
+
 export class Lobby {
   constructor(state) {
     this.state = state;
     this.rooms = null; // lazy-loaded from storage
+    this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
   }
 
   async getRooms() {
     if (this.rooms === null) {
-      this.rooms = await this.state.storage.get("rooms") || {};
+      const stored = await this.state.storage.get("rooms") || {};
+      // Migrate old format: bare numbers → { count, lastUpdated }
+      for (const [name, value] of Object.entries(stored)) {
+        if (typeof value === "number") {
+          stored[name] = { count: value, lastUpdated: 0 };
+        }
+      }
+      this.rooms = stored;
     }
     return this.rooms;
   }
 
+  async alarm() {
+    const rooms = await this.getRooms();
+    const now = Date.now();
+    let changed = false;
+    for (const [name, data] of Object.entries(rooms)) {
+      if (now - data.lastUpdated > STALE_THRESHOLD_MS) {
+        delete rooms[name];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.state.storage.put("rooms", rooms);
+    }
+    this.state.storage.setAlarm(Date.now() + ALARM_INTERVAL_MS);
+  }
+
+  async setRoomCount(room, count) {
+    const rooms = await this.getRooms();
+    if (count > 0) {
+      rooms[room] = { count, lastUpdated: Date.now() };
+    } else {
+      delete rooms[room];
+    }
+    await this.state.storage.put("rooms", rooms);
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
-    const rooms = await this.getRooms();
-    if (request.method === "POST" && url.pathname === "/update") {
-      const { room, count } = await request.json();
-      if (count > 0) {
-        rooms[room] = count;
-      } else {
-        delete rooms[room];
+
+    try {
+      // POST /update — Room DOs report their user count
+      if (request.method === "POST" && url.pathname === "/update") {
+        const { room, count } = await request.json();
+        if (typeof room !== "string" || typeof count !== "number") {
+          return Response.json({ error: "invalid payload: need { room: string, count: number }" }, { status: 400 });
+        }
+        await this.setRoomCount(room, count);
+        return Response.json({ ok: true });
       }
-      await this.state.storage.put("rooms", rooms);
-      return new Response("ok");
+
+      // POST /reconcile — Room DOs correct stale counts on cold start
+      if (request.method === "POST" && url.pathname === "/reconcile") {
+        const { room, actualCount } = await request.json();
+        if (typeof room !== "string" || typeof actualCount !== "number") {
+          return Response.json({ error: "invalid payload: need { room: string, actualCount: number }" }, { status: 400 });
+        }
+        await this.setRoomCount(room, actualCount);
+        return Response.json({ ok: true });
+      }
+
+      // GET /list — return active rooms
+      if (url.pathname === "/list") {
+        const rooms = await this.getRooms();
+        const list = Object.entries(rooms).map(([name, data]) => ({
+          name,
+          count: data.count,
+        }));
+        return Response.json(list);
+      }
+
+      return Response.json({ error: "not found" }, { status: 404 });
+    } catch (e) {
+      return Response.json({ error: e.message }, { status: 500 });
     }
-    // GET /list
-    const list = Object.entries(rooms).map(([name, count]) => ({ name, count }));
-    return Response.json(list);
   }
 }
 
@@ -45,7 +104,7 @@ export class Room {
   async fetch(request) {
     const url = new URL(request.url);
     if (request.headers.get("Upgrade") !== "websocket") {
-      return new Response("Expected WebSocket", { status: 426 });
+      return Response.json({ error: "expected WebSocket" }, { status: 426 });
     }
 
     // Extract room name from path
@@ -134,11 +193,15 @@ export default {
 
     // Live room list
     if (url.pathname === "/rooms") {
-      const id = env.LOBBY.idFromName("main");
-      const lobby = env.LOBBY.get(id);
-      const res = await lobby.fetch("http://internal/list");
-      const data = await res.json();
-      return Response.json(data, { headers: corsHeaders });
+      try {
+        const id = env.LOBBY.idFromName("main");
+        const lobby = env.LOBBY.get(id);
+        const res = await lobby.fetch("http://internal/list");
+        const data = await res.json();
+        return Response.json(data, { headers: corsHeaders });
+      } catch (e) {
+        return Response.json({ error: "failed to fetch room list" }, { status: 502, headers: corsHeaders });
+      }
     }
 
     // WebSocket endpoint: /ws/:room
@@ -153,6 +216,9 @@ export default {
       return Response.json({ status: "ok" }, { headers: corsHeaders });
     }
 
-    return new Response("FocalCodec Walkie-Talkie Relay", { headers: corsHeaders });
+    return Response.json(
+      { error: "not found", hint: "endpoints: /rooms, /ws/:room, /health" },
+      { status: 404, headers: corsHeaders }
+    );
   },
 };
