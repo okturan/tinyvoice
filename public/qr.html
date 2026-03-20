@@ -132,7 +132,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
         <input class="qr-url" id="qr-url" readonly onclick="this.select()">
         <button class="copy-btn" onclick="copyUrl()">Copy</button>
       </div>
-      <a class="dl-btn" id="dl-link" download="tinyvoice.bin">Download .bin</a>
+      <a class="dl-btn" id="dl-link" download="tinyvoice-qr.png">Download QR</a>
       <br>
       <button class="new-btn" onclick="resetRecord()">Record another</button>
     </div>
@@ -307,9 +307,15 @@ async function recUp(e) {
     document.getElementById('qr-url').value = playUrl;
     document.getElementById('qr-img').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(playUrl);
 
-    // Download link
-    const blob = new Blob([pk], {type:'application/octet-stream'});
-    document.getElementById('dl-link').href = URL.createObjectURL(blob);
+    // Download QR as PNG
+    const qrImg = document.getElementById('qr-img');
+    qrImg.crossOrigin = 'anonymous';
+    qrImg.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = qrImg.naturalWidth; cv.height = qrImg.naturalHeight;
+      cv.getContext('2d').drawImage(qrImg, 0, 0);
+      document.getElementById('dl-link').href = cv.toDataURL('image/png');
+    };
 
     document.getElementById('qr-result').style.display = 'block';
     st.className = 'rec-status ok';
