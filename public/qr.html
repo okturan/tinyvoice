@@ -120,7 +120,7 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
     </div>
     <div class="rec-progress"><div class="rec-progress-fill" id="rec-prog"></div></div>
     <div class="rec-status" id="rec-status">Load models first</div>
-    <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~660 MB)</button>
+    <button class="copy-btn" id="load-btn" onclick="loadEncoder()" style="display:block;width:100%;margin-bottom:12px">Load Encoder (~670 MB, 12.5hz for tiny QR)</button>
     <div class="qr-result" id="qr-result">
       <img id="qr-img" width="200" height="200" alt="QR code">
       <div class="qr-meta">
@@ -174,8 +174,25 @@ body { font-family:'Inter',system-ui,sans-serif; background:var(--crust); color:
 const SR=16000, NFFT=1024, HOP=320, WLEN=1024, PAD=352;
 const MODEL_BASE='https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/';
 
-let encSess=null, decSess=null, istftWin=null, playCtx=null;
+let encSess=null, compSess=null, decSess=null, istftWin=null, playCtx=null;
 let mic=null, actx=null, isRec=false, recChunks=[];
+
+async function dlModel(name, onProgress) {
+  const resp = await fetch(MODEL_BASE + name);
+  const total = +resp.headers.get('Content-Length') || 1;
+  const reader = resp.body.getReader();
+  const chunks = []; let received = 0;
+  while (true) {
+    const {done,value} = await reader.read();
+    if (done) break;
+    chunks.push(value); received += value.length;
+    onProgress(received / total);
+  }
+  const result = new Uint8Array(received);
+  let off = 0;
+  for (const c of chunks) { result.set(c, off); off += c.length; }
+  return result.buffer;
+}
 
 // === MODE SWITCHING ===
 function setMode(m) {
@@ -201,25 +218,19 @@ async function loadEncoder() {
     mic = await navigator.mediaDevices.getUserMedia({audio:{sampleRate:SR,channelCount:1}});
     actx = new AudioContext({sampleRate:SR});
 
-    st.textContent = 'Downloading encoder...';
-    const resp = await fetch(MODEL_BASE + 'encoder_50hz.onnx');
-    const total = +resp.headers.get('Content-Length') || 697000000;
-    const reader = resp.body.getReader();
-    const chunks = []; let received = 0;
-    while (true) {
-      const {done,value} = await reader.read();
-      if (done) break;
-      chunks.push(value); received += value.length;
-      prog.style.width = (received/total*90) + '%';
-      if (received%(20*1048576)<65536) st.textContent = `Encoder: ${(received/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB`;
-    }
-    const modelBytes = new Uint8Array(received);
-    let off = 0;
-    for (const c of chunks) { modelBytes.set(c, off); off += c.length; }
+    // Load shared WavLM encoder
+    st.textContent = 'Downloading encoder (595 MB)...';
+    const encBytes = await dlModel('encoder.onnx', p => { prog.style.width = (p*70)+'%'; st.textContent = `Encoder: ${(p*595).toFixed(0)} / 595 MB`; });
+    st.textContent = 'Initializing encoder...';
+    prog.style.width = '72%';
+    encSess = await ort.InferenceSession.create(encBytes, {executionProviders:['wasm']});
 
-    st.textContent = 'Initializing...';
-    prog.style.width = '95%';
-    encSess = await ort.InferenceSession.create(modelBytes.buffer, {executionProviders:['wasm']});
+    // Load 12.5hz compressor (smaller QR codes)
+    st.textContent = 'Downloading 12.5hz compressor (76 MB)...';
+    const compBytes = await dlModel('compressor_12_5hz.onnx', p => { prog.style.width = (72+p*18)+'%'; });
+    st.textContent = 'Initializing compressor...';
+    prog.style.width = '92%';
+    compSess = await ort.InferenceSession.create(compBytes, {executionProviders:['wasm']});
 
     prog.style.width = '100%';
     st.className = 'rec-status ok';
@@ -273,7 +284,12 @@ async function recUp(e) {
   prog.style.width = '50%';
 
   try {
-    const r = await encSess.run({audio: new ort.Tensor('float32', audio, [1, tl])});
+    // Two-stage: encoder → features → compressor → tokens
+    st.textContent = 'Encoding (stage 1/2)...';
+    const feats = await encSess.run({audio: new ort.Tensor('float32', audio, [1, tl])});
+    prog.style.width = '75%';
+    st.textContent = 'Compressing (stage 2/2)...';
+    const r = await compSess.run({features: feats.features});
     const tok = r.tokens.data;
     prog.style.width = '100%';
 
@@ -282,7 +298,7 @@ async function recUp(e) {
     for (let i = 0; i < tok.length; i++) dv.setUint16(i*2, Number(tok[i]), true);
 
     const b64 = btoa(String.fromCharCode(...pk));
-    const playUrl = `${location.origin}/play.html?v=${encodeURIComponent(b64)}`;
+    const playUrl = `${location.origin}/qr.html?v=${encodeURIComponent(b64)}`;
 
     // Show QR
     document.getElementById('qr-bytes').textContent = pk.length;
@@ -412,7 +428,7 @@ async function decodeAndPlay() {
     const wr=await fetch(MODEL_BASE+'istft_window.json');istftWin=new Float32Array(await wr.json());
 
     st.textContent='Loading decoder...';
-    const resp=await fetch(MODEL_BASE+'decoder_50hz.onnx');
+    const resp=await fetch(MODEL_BASE+'decoder_12_5hz.onnx');
     const total=+resp.headers.get('Content-Length')||141000000;
     const reader=resp.body.getReader();const chunks=[];let received=0;
     while(true){const{done,value}=await reader.read();if(done)break;chunks.push(value);received+=value.length;prog.style.width=(5+received/total*70)+'%';
@@ -443,6 +459,21 @@ async function decodeAndPlay() {
   } catch(e) {
     st.className='dec-status err';st.textContent=e.message;
     btn.className='play-btn';btn.innerHTML='&#9654;';btn.disabled=false;
+  }
+}
+
+// === AUTO-DECODE FROM URL ===
+const params = new URLSearchParams(location.search);
+const voiceB64 = params.get('v');
+if (voiceB64) {
+  try {
+    const raw = atob(decodeURIComponent(voiceB64));
+    const data = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) data[i] = raw.charCodeAt(i);
+    setMode('decode');
+    showDecPlayer(data);
+  } catch (e) {
+    setDecStatus('Invalid voice data in URL', 'err');
   }
 }
 </script>

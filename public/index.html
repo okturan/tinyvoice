@@ -91,6 +91,13 @@
         all inference in-browser
       </div>
     </div>
+
+    <div class="sec">
+      <a href="qr.html" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--subtext);font-size:0.78rem;transition:color 0.1s">
+        <span style="font-size:1.1rem">📱</span>
+        <span>Voice QR — record &amp; scan</span>
+      </a>
+    </div>
   </div>
 
   <!-- Main -->
@@ -699,7 +706,7 @@ async function pttUp(e) {
 
     // Generate shareable voice link
     const b64 = btoa(String.fromCharCode(...pk));
-    const playUrl = `${location.origin}/play.html?v=${encodeURIComponent(b64)}`;
+    const playUrl = `${location.origin}/qr.html?v=${encodeURIComponent(b64)}`;
     log(`Voice link: ${pk.length}B → ${b64.length} chars`, 'dim');
     showShareModal(playUrl, pk.length, tok.length, dur);
 
