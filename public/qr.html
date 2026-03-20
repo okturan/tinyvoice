@@ -458,7 +458,7 @@ async function loadEncoder() {
 let sp = null;
 function recDown(e) {
   e.preventDefault();
-  if (!encSess || !compSess || isRec) return;
+  if (!encSess || isRec) return;
   isRec = true; recChunks = [];
   const btn = document.getElementById('rec-btn');
   btn.classList.add('recording');

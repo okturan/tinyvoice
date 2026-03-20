@@ -219,20 +219,17 @@ async function fetchRooms() {
 }
 function renderRooms(active) {
   const el = document.getElementById('room-list');
-  const hdr = document.getElementById('room-list-hdr');
+  if (!el) return;
   const recent = getRecent();
   el.innerHTML = '';
   if (active.length) {
-    hdr.textContent = 'Live rooms';
     active.forEach(r => renderRoomItem(el, r.name, r.count));
     return;
   }
   if (recent.length) {
-    hdr.textContent = 'Recent rooms';
     recent.forEach(name => renderRoomItem(el, name));
     return;
   }
-  hdr.textContent = 'Suggested rooms';
   SUGGESTED.forEach(name => renderRoomItem(el, name));
 }
 function startRoomPoll() { fetchRooms(); roomPoll = setInterval(fetchRooms, 4000); }
