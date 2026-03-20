@@ -130,3 +130,13 @@
     @apply font-sans;
   }
 }
+
+/* Beacon animation for room active card */
+@keyframes beacon {
+  0%, 100% { transform: scale(0.85); opacity: 0.2; }
+  50% { transform: scale(1.15); opacity: 0.4; }
+}
+
+@utility animate-beacon {
+  animation: beacon 2.4s ease-in-out infinite;
+}
