@@ -16,6 +16,7 @@ export default function RecordPanel() {
   const [quality, setQuality] = useState<Quality>(Quality.Hz12_5);
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [modelsCached, setModelsCached] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("Load models to start recording");
@@ -44,6 +45,16 @@ export default function RecordPanel() {
   const [recTime, setRecTime] = useState("0.0s");
   const recStartRef = useRef(0);
   const workletRegisteredRef = useRef(false);
+
+  // Check if models are cached on mount
+  useEffect(() => {
+    codec.isCoreModelsCached(quality).then((cached) => {
+      if (cached) {
+        setModelsCached(true);
+        setStatus("Cached \u2014 tap to load");
+      }
+    });
+  }, [quality]);
 
   // Waveform drawing
   const drawWaveform = useCallback(() => {
@@ -286,7 +297,7 @@ export default function RecordPanel() {
                 onClick={handleLoadModels}
                 disabled={loading}
               >
-                {loading ? "Downloading..." : "Download Models"}
+                {loading ? "Loading..." : modelsCached ? "Load from cache" : "Download Models"}
               </Button>
               {(loading || progress > 0) && (
                 <Progress value={progress} className="h-1.5" />
