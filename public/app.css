@@ -544,3 +544,91 @@ select { cursor: pointer; appearance: none; padding-right: 24px;
   .log-wrap { padding: 4px 10px; }
   .log { height: 80px; font-size: 0.58rem; line-height: 1.6; }
 }
+
+/* ══════════════════════════════════════════════════════
+   Share / QR Modal
+   ══════════════════════════════════════════════════════ */
+#share-modal {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none;
+}
+#share-modal.show { opacity: 1; pointer-events: auto; }
+
+.share-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+
+.share-card {
+  position: relative; z-index: 1;
+  width: min(90vw, 360px);
+  background: var(--base); border: 1px solid var(--surface0);
+  border-radius: 16px; padding: 24px;
+  text-align: center;
+  transform: translateY(10px);
+  transition: transform 0.2s;
+}
+#share-modal.show .share-card { transform: translateY(0); }
+
+.share-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.share-title {
+  font-size: 0.9rem; font-weight: 600; color: var(--text);
+}
+.share-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: none; background: var(--surface0);
+  color: var(--overlay); font-size: 1.1rem;
+  cursor: pointer; transition: all 0.1s;
+  display: flex; align-items: center; justify-content: center;
+}
+.share-close:hover { background: var(--surface1); color: var(--text); }
+
+.share-qr {
+  display: flex; justify-content: center;
+  margin-bottom: 16px;
+}
+.share-qr img {
+  border-radius: 8px;
+  background: white; padding: 8px;
+}
+
+.share-meta {
+  display: flex; justify-content: center; gap: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; color: var(--overlay);
+  margin-bottom: 12px;
+}
+.share-meta b { color: var(--text); font-weight: 600; }
+
+.share-url-row {
+  display: flex; gap: 4px;
+}
+.share-url {
+  flex: 1; min-width: 0;
+  padding: 7px 10px;
+  background: var(--mantle); border: 1px solid var(--surface0);
+  border-radius: 7px; color: var(--subtext);
+  font-family: 'JetBrains Mono', monospace; font-size: 0.65rem;
+  cursor: pointer;
+}
+.share-url:focus { outline: none; border-color: var(--surface1); }
+.share-copy {
+  padding: 7px 14px; border: 1px solid var(--surface0);
+  background: var(--surface0); color: var(--subtext);
+  border-radius: 7px; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 0.72rem;
+  font-weight: 500; transition: all 0.1s;
+  white-space: nowrap;
+}
+.share-copy:hover { background: var(--surface1); color: var(--text); }
+
+.share-hint {
+  margin-top: 12px;
+  font-size: 0.65rem; color: var(--overlay);
+}
