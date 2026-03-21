@@ -52,6 +52,7 @@ export function PTTPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareData, setShareData] = useState({ url: "", bytes: 0, tokens: 0, duration: "" });
   const [username, setUsername] = useState(() => localStorage.getItem("fc-username") || "");
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const isPttReady = codec.modelsLoaded && room.isConnected;
@@ -248,10 +249,23 @@ export function PTTPage() {
                   className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
                   {codec.state === "loading" ? "Initializing..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Initialize Models" : "Download Models"}
                 </button>
-                <button onClick={() => codec.clearModelCache()}
-                  className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">
-                  Clear Cache
-                </button>
+                {clearConfirm ? (
+                  <div className="flex gap-1.5 mt-1">
+                    <button onClick={() => { codec.clearModelCache(); setClearConfirm(false); }}
+                      className="flex-1 py-1 rounded-md text-[0.65rem] font-medium text-[var(--red)] bg-[color-mix(in_srgb,var(--red)_10%,var(--surface0))] hover:bg-[color-mix(in_srgb,var(--red)_20%,var(--surface0))] transition-colors cursor-pointer">
+                      Yes, delete all
+                    </button>
+                    <button onClick={() => setClearConfirm(false)}
+                      className="flex-1 py-1 rounded-md text-[0.65rem] text-[var(--overlay)] bg-[var(--surface0)] hover:bg-[var(--surface1)] transition-colors cursor-pointer">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setClearConfirm(true)}
+                    className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">
+                    Clear Cache
+                  </button>
+                )}
               </div>
 
               {/* Spacer + bottom links */}
