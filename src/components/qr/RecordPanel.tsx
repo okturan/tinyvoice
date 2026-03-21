@@ -334,7 +334,7 @@ export default function RecordPanel() {
               )}
             </div>
           )}
-          <p
+          {status && <p
             className={`mt-2 min-h-[1.2em] text-[0.7rem] ${
               statusType === "ok"
                 ? "text-[var(--green)]"
@@ -344,7 +344,7 @@ export default function RecordPanel() {
             }`}
           >
             {status}
-          </p>
+          </p>}
         </CardContent>
       </Card>
 
@@ -353,7 +353,7 @@ export default function RecordPanel() {
         <button
           className={`mb-3 flex h-[100px] w-[100px] cursor-pointer select-none flex-col items-center justify-center gap-1 rounded-full border-2 font-sans text-xs font-semibold transition-all ${
             !modelsLoaded
-              ? "cursor-not-allowed border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)] opacity-15"
+              ? "cursor-not-allowed border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)] opacity-30"
               : recordState === "recording"
                 ? "border-[var(--red)] bg-[color-mix(in_srgb,var(--red)_8%,var(--base))] text-[var(--red)]"
                 : recordState === "encoding"

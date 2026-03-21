@@ -16,7 +16,7 @@ const STATE_CLASSES: Record<PTTState, string> = {
     "border-[var(--yellow)] bg-[color-mix(in_srgb,var(--yellow)_6%,var(--base))] text-[var(--yellow)]",
   sending:
     "border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_6%,var(--base))] text-[var(--accent)]",
-  disabled: "opacity-15 cursor-not-allowed border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)]",
+  disabled: "opacity-30 cursor-not-allowed border-[var(--surface1)] bg-[var(--mantle)] text-[var(--overlay)]",
 };
 
 const LABELS: Record<PTTState, string> = {

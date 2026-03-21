@@ -314,7 +314,7 @@ export function PTTPage() {
                   { value: stats.decodeTime, label: "decode", color: "" },
                 ].map(s => (
                   <div key={s.label} className="text-center py-2 rounded-lg bg-[var(--base)] border border-[var(--surface0)]">
-                    <div className={`font-mono text-[0.85rem] font-semibold ${s.color || "text-[var(--text)]"}`}>{s.value}</div>
+                    <div className={`font-mono text-[0.85rem] font-semibold ${s.color || (s.value === "\u2014" ? "text-[var(--surface2)]" : "text-[var(--text)]")}`}>{s.value}</div>
                     <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-wider mt-0.5">{s.label}</div>
                   </div>
                 ))}
@@ -326,7 +326,15 @@ export function PTTPage() {
                   <ScrollArea className="flex-1">
                     <div className="font-mono text-[0.75rem] leading-[1.8] p-3">
                       {logEntries.length === 0 && (
-                        <div className="text-[var(--surface2)] text-center py-6">Join a room and download models to start</div>
+                        <div className="flex flex-col items-center justify-center py-10 gap-2 text-[var(--surface2)]">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                            <line x1="12" x2="12" y1="19" y2="22" />
+                          </svg>
+                          <span className="text-[0.7rem]">Join a room & load models to start</span>
+                          <span className="text-[0.55rem] opacity-50">Activity will appear here</span>
+                        </div>
                       )}
                       {logEntries.map(entry => (
                         <div key={entry.id} className="log-entry">
