@@ -2,12 +2,20 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { codec } from "@/lib/codec-service";
+import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
 import { Play, Square } from "lucide-react";
 import CopyIcon from "@/components/ui/copy-icon";
 import DownloadIcon from "@/components/ui/download-icon";
 import CodeIcon from "@/components/ui/code-icon";
+
+const DECODER_OPTS: { label: string; value: string }[] = [
+  { label: "Auto", value: "auto" },
+  { label: "12.5hz", value: Quality.Hz12_5 },
+  { label: "25hz", value: Quality.Hz25 },
+  { label: "50hz", value: Quality.Hz50 },
+];
 
 interface QRResultProps {
   packed: Uint8Array;
@@ -24,8 +32,10 @@ export default function QRResult({
   const [copied, setCopied] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [previewStatus, setPreviewStatus] = useState("");
+  const [decoderOverride, setDecoderOverride] = useState<Quality | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioBufferRef = useRef<AudioBuffer | null>(null);
 
   const b64 = bytesToBase64(packed);
   const playUrl = `${window.location.origin}/qr?v=${encodeURIComponent(b64)}`;
@@ -54,6 +64,12 @@ export default function QRResult({
     a.click();
   }, [qrDataUrl]);
 
+  const handleDecoderChange = useCallback((value: string) => {
+    const q = value === "auto" ? null : (value as Quality);
+    setDecoderOverride(q);
+    audioBufferRef.current = null;
+  }, []);
+
   const preview = useCallback(async () => {
     if (playing && sourceRef.current) {
       sourceRef.current.stop();
@@ -62,11 +78,31 @@ export default function QRResult({
       return;
     }
 
+    // Replay cached audio if available
+    if (audioBufferRef.current) {
+      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+        audioCtxRef.current = new AudioContext({ sampleRate: SR });
+      }
+      if (audioCtxRef.current.state === "suspended") {
+        await audioCtxRef.current.resume();
+      }
+      const src = audioCtxRef.current.createBufferSource();
+      src.buffer = audioBufferRef.current;
+      src.connect(audioCtxRef.current.destination);
+      sourceRef.current = src;
+      setPlaying(true);
+      src.onended = () => { setPlaying(false); sourceRef.current = null; };
+      src.start();
+      return;
+    }
+
     setPreviewStatus("Decoding...");
     try {
-      const audio = await codec.decode(packed, undefined, (info) => {
-        setPreviewStatus(info.status);
-      });
+      const audio = await codec.decode(
+        packed,
+        decoderOverride ?? undefined,
+        (info) => setPreviewStatus(info.status),
+      );
 
       if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
         audioCtxRef.current = new AudioContext({ sampleRate: SR });
@@ -77,6 +113,8 @@ export default function QRResult({
 
       const buf = audioCtxRef.current.createBuffer(1, audio.length, SR);
       buf.getChannelData(0).set(audio);
+      audioBufferRef.current = buf;
+
       const src = audioCtxRef.current.createBufferSource();
       src.buffer = buf;
       src.connect(audioCtxRef.current.destination);
@@ -91,7 +129,7 @@ export default function QRResult({
     } catch (e) {
       setPreviewStatus((e as Error).message);
     }
-  }, [packed, playing]);
+  }, [packed, playing, decoderOverride]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -160,6 +198,29 @@ export default function QRResult({
             Hex
           </Button>
         )}
+      </div>
+
+      {/* Decoder override */}
+      <div className="flex items-center justify-center gap-1">
+        <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
+          Decoder:
+        </span>
+        {DECODER_OPTS.map((opt) => (
+          <Button
+            key={opt.value}
+            variant="ghost"
+            size="sm"
+            className={`h-6 px-2 font-sans text-[0.6rem] ${
+              (opt.value === "auto" && !decoderOverride) ||
+              opt.value === decoderOverride
+                ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
+                : "text-[var(--overlay)]"
+            }`}
+            onClick={() => handleDecoderChange(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
       </div>
 
       {previewStatus && (

@@ -262,15 +262,6 @@ export default function RecordPanel() {
     [quality],
   );
 
-  const resetRecord = useCallback(() => {
-    setEncodeResult(null);
-    setHexData(null);
-    setHexOpen(false);
-    setProgress(0);
-    setStatusType("ok");
-    setStatus("Ready \u2014 hold to record");
-  }, []);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -438,11 +429,6 @@ export default function RecordPanel() {
               duration={encodeResult.duration}
               onHexOpen={() => setHexOpen(true)}
             />
-            <div className="mt-3 text-center">
-              <Button variant="outline" size="sm" onClick={resetRecord}>
-                Record another
-              </Button>
-            </div>
           </CardContent>
         </Card>
       )}
