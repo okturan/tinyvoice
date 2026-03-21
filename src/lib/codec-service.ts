@@ -274,6 +274,7 @@ class CodecService {
     signal?: AbortSignal,
   ): Promise<OrtSession> {
     const buf = await loadModel(name, onProgress ?? (() => {}), signal);
+    if (signal?.aborted) throw new DOMException("Load cancelled", "AbortError");
     onProgress?.({ fraction: 1, status: `Initializing ${name}...` });
     return window.ort.InferenceSession.create(buf, {
       executionProviders: ["wasm"],

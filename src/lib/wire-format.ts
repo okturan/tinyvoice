@@ -24,6 +24,7 @@ export function packTokens(
   quality: Quality,
 ): Uint8Array {
   const n = tokens.length;
+  if (n === 0) throw new Error("Cannot pack empty token array");
   const pk = new Uint8Array(1 + n * 2);
   pk[0] = MAGIC_BYTES[quality];
   const dv = new DataView(pk.buffer);

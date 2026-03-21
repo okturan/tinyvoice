@@ -14,6 +14,7 @@ export async function loadModel(
 ): Promise<ArrayBuffer> {
   try {
     const cached = await getCached(name);
+    if (signal?.aborted) throw new DOMException("Download cancelled", "AbortError");
     if (cached && cached.byteLength > 1048576) {
       onProgress({
         fraction: 1,
