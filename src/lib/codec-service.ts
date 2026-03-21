@@ -159,7 +159,11 @@ class CodecService {
     onProgress?: ProgressFn,
     signal?: AbortSignal,
   ): Promise<EncodeResult> {
-    const encSess = await this.loadEncoder(undefined, signal);
+    // Load both sessions in parallel (matters on first QR encode without loadAll)
+    const [encSess, compSess] = await Promise.all([
+      this.loadEncoder(undefined, signal),
+      this.loadCompressor(quality, undefined, signal),
+    ]);
 
     onProgress?.({ fraction: 0.1, status: `Encoding (${quality})...` });
     const feats = await encSess.run({
@@ -167,7 +171,6 @@ class CodecService {
     });
     onProgress?.({ fraction: 0.5, status: "Compressing..." });
 
-    const compSess = await this.loadCompressor(quality, undefined, signal);
     const r = await compSess.run({ features: feats.features });
     const tok = r.tokens.data as BigInt64Array;
     onProgress?.({ fraction: 0.9, status: "Packing..." });

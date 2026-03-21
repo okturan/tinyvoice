@@ -12,7 +12,6 @@ export async function loadModel(
   onProgress: (info: ModelLoadProgress) => void,
   signal?: AbortSignal
 ): Promise<ArrayBuffer> {
-  // Check IndexedDB cache first (gracefully skip if IDB unavailable)
   try {
     const cached = await getCached(name);
     if (cached && cached.byteLength > 1048576) {
@@ -23,17 +22,13 @@ export async function loadModel(
       return cached;
     }
     if (cached) {
-      onProgress({
-        fraction: 0,
-        status: `${name} cache corrupt, re-downloading`,
-      });
+      onProgress({ fraction: 0, status: `${name} cache corrupt, re-downloading` });
       await delCache(name);
     }
   } catch {
-    // IDB unavailable or broken — fall through to network download
+    // IDB unavailable — fall through to network
   }
 
-  // Download from HuggingFace
   const url = MODEL_BASE + name;
   const resp = await fetch(url, { signal });
 
@@ -49,45 +44,47 @@ export async function loadModel(
   onProgress({ fraction: 0, status: `Downloading ${name} (${totalMB})...` });
 
   const reader = resp.body.getReader();
+  let result: Uint8Array;
 
-  // Stream directly into a pre-allocated buffer when size is known,
-  // avoiding a second full-size copy that doubles peak memory
   if (total > 0) {
-    const result = new Uint8Array(total);
-    let received = 0;
-    const t0 = performance.now();
-
-    for (;;) {
-      if (signal?.aborted) {
-        await reader.cancel();
-        throw new DOMException("Download cancelled", "AbortError");
-      }
-      const { done, value } = await reader.read();
-      if (done) break;
-      result.set(value, received);
-      received += value.length;
-      const frac = received / total;
-      const mb = (received / 1048576).toFixed(1);
-      const elapsed = (performance.now() - t0) / 1000;
-      const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : "\u2014";
-      onProgress({
-        fraction: frac,
-        status: `${mb} / ${totalMB} \u00b7 ${speed} MB/s`,
-      });
+    // Pre-allocate when size is known to avoid doubling peak memory
+    result = new Uint8Array(total);
+    await streamInto(reader, signal, total, totalMB, onProgress, (value, received) => {
+      result.set(value, received - value.length);
+    });
+  } else {
+    // Unknown size — collect chunks then merge
+    const chunks: Uint8Array[] = [];
+    await streamInto(reader, signal, 0, "?", onProgress, (value) => {
+      chunks.push(value);
+    });
+    const received = chunks.reduce((s, c) => s + c.length, 0);
+    result = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
     }
-
-    // Cache in IndexedDB (non-fatal if it fails)
-    try {
-      await setCache(name, result.buffer);
-    } catch {
-      // cache failure is non-fatal
-    }
-
-    return result.buffer;
   }
 
-  // Fallback: unknown size — collect chunks then merge
-  const chunks: Uint8Array[] = [];
+  try {
+    await setCache(name, result.buffer.slice(0));
+  } catch {
+    // cache failure is non-fatal
+  }
+
+  return result.buffer;
+}
+
+/** Shared streaming loop for both download paths */
+async function streamInto(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal | undefined,
+  total: number,
+  totalLabel: string,
+  onProgress: (info: ModelLoadProgress) => void,
+  onChunk: (value: Uint8Array, received: number) => void,
+): Promise<void> {
   let received = 0;
   const t0 = performance.now();
 
@@ -98,29 +95,15 @@ export async function loadModel(
     }
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
     received += value.length;
+    onChunk(value, received);
+    const frac = total ? received / total : 0;
     const mb = (received / 1048576).toFixed(1);
     const elapsed = (performance.now() - t0) / 1000;
     const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : "\u2014";
     onProgress({
-      fraction: 0,
-      status: `${mb} / ? \u00b7 ${speed} MB/s`,
+      fraction: frac,
+      status: `${mb} / ${totalLabel} \u00b7 ${speed} MB/s`,
     });
   }
-
-  const result = new Uint8Array(received);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  try {
-    await setCache(name, result.buffer);
-  } catch {
-    // cache failure is non-fatal
-  }
-
-  return result.buffer;
 }

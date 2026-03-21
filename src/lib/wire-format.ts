@@ -46,21 +46,16 @@ export function packTokens(
 export function unpackTokens(data: Uint8Array): WirePacket | null {
   if (data.length < 2) return null;
 
-  // Check for magic byte header
-  if (
-    data.length >= 3 &&
-    data[0]! >= 0x01 &&
-    data[0]! <= 0x03 &&
-    (data.length - 1) % 2 === 0
-  ) {
-    const quality = MAGIC_TO_QUALITY[data[0]!];
-    if (quality) {
-      return {
-        quality,
-        tokenBytes: data.slice(1),
-        hasMagicByte: true,
-      };
-    }
+  // Check for magic byte header using the canonical map
+  const magicQuality = data.length >= 3 && (data.length - 1) % 2 === 0
+    ? MAGIC_TO_QUALITY[data[0]!]
+    : undefined;
+  if (magicQuality) {
+    return {
+      quality: magicQuality,
+      tokenBytes: data.slice(1),
+      hasMagicByte: true,
+    };
   }
 
   // Legacy: no header — default to Hz50 (cannot reliably guess from count)
