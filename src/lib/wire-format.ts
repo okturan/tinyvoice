@@ -37,11 +37,15 @@ export function packTokens(
  * Unpack wire format data into tokens and detected quality.
  *
  * Supports both magic-byte-prefixed format and legacy headerless format.
+ * Legacy packets default to Hz50 since quality cannot be reliably guessed
+ * from token count alone (recordings can be any duration).
  *
  * @param data - Raw packet bytes
  * @returns Parsed wire packet, or null if data is invalid
  */
 export function unpackTokens(data: Uint8Array): WirePacket | null {
+  if (data.length < 2) return null;
+
   // Check for magic byte header
   if (
     data.length >= 3 &&
@@ -59,29 +63,29 @@ export function unpackTokens(data: Uint8Array): WirePacket | null {
     }
   }
 
-  // Legacy: no header, guess quality from token count
-  if (data.length >= 4 && data.length % 2 === 0) {
-    const nTok = data.length / 2;
-    const quality =
-      nTok <= 100
-        ? Quality.Hz12_5
-        : nTok <= 200
-          ? Quality.Hz25
-          : Quality.Hz50;
+  // Legacy: no header — default to Hz50 (cannot reliably guess from count)
+  if (data.length % 2 === 0) {
     return {
-      quality,
+      quality: Quality.Hz50,
       tokenBytes: data,
       hasMagicByte: false,
     };
   }
 
+  // Odd byte count — invalid packet
   return null;
 }
 
 /**
  * Convert raw token bytes (16-bit LE) into a BigInt64Array for ONNX.
+ * @throws Error if tokenBytes has odd length
  */
 export function tokenBytesToBigInt64(tokenBytes: Uint8Array): BigInt64Array {
+  if (tokenBytes.length % 2 !== 0) {
+    throw new Error(
+      `Invalid token data: expected even byte count, got ${tokenBytes.length}`,
+    );
+  }
   const n = tokenBytes.length / 2;
   const tok = new BigInt64Array(n);
   const dv = new DataView(

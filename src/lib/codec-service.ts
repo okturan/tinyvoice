@@ -42,6 +42,9 @@ class CodecService {
   private decoders: Partial<Record<Quality, Promise<OrtSession>>> = {};
   private istftWindow: Promise<Float32Array> | null = null;
 
+  /** Generation counter — bumped on reset() to invalidate stale loads */
+  private generation = 0;
+
   // ── Individual loaders ──
 
   loadEncoder(
@@ -49,10 +52,11 @@ class CodecService {
     signal?: AbortSignal,
   ): Promise<OrtSession> {
     if (this.encoder) return this.encoder;
+    const gen = this.generation;
     const promise = this.createSession("encoder.onnx", onProgress, signal);
     this.encoder = promise;
     promise.catch(() => {
-      this.encoder = null;
+      if (this.generation === gen) this.encoder = null;
     });
     return promise;
   }
@@ -64,11 +68,12 @@ class CodecService {
   ): Promise<OrtSession> {
     const existing = this.compressors[quality];
     if (existing) return existing;
+    const gen = this.generation;
     const name = `compressor_${quality}.onnx`;
     const promise = this.createSession(name, onProgress, signal);
     this.compressors[quality] = promise;
     promise.catch(() => {
-      delete this.compressors[quality];
+      if (this.generation === gen) delete this.compressors[quality];
     });
     return promise;
   }
@@ -80,23 +85,28 @@ class CodecService {
   ): Promise<OrtSession> {
     const existing = this.decoders[quality];
     if (existing) return existing;
+    const gen = this.generation;
     const name = `decoder_${quality}.onnx`;
     const promise = this.createSession(name, onProgress, signal);
     this.decoders[quality] = promise;
     promise.catch(() => {
-      delete this.decoders[quality];
+      if (this.generation === gen) delete this.decoders[quality];
     });
     return promise;
   }
 
   loadIstftWindow(): Promise<Float32Array> {
     if (this.istftWindow) return this.istftWindow;
+    const gen = this.generation;
     const promise = fetch("/istft_window.json")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to load iSTFT window: HTTP ${r.status}`);
+        return r.json();
+      })
       .then((arr: number[]) => new Float32Array(arr));
     this.istftWindow = promise;
     promise.catch(() => {
-      this.istftWindow = null;
+      if (this.generation === gen) this.istftWindow = null;
     });
     return promise;
   }
@@ -108,8 +118,8 @@ class CodecService {
     onProgress?: ProgressFn,
     signal?: AbortSignal,
   ): Promise<void> {
-    // iSTFT window is tiny — fire and forget, it'll be ready before decode
-    this.loadIstftWindow();
+    // Start iSTFT window fetch early but DO await it
+    const windowPromise = this.loadIstftWindow();
 
     // Decoder and encoder are independent — download in parallel
     onProgress?.({ fraction: 0, status: "Loading models..." });
@@ -131,6 +141,9 @@ class CodecService {
       this.scaleProgress(onProgress, 0.8, 0.2),
       signal,
     );
+
+    // Ensure iSTFT window is ready before reporting success
+    await windowPromise;
 
     onProgress?.({
       fraction: 1,
@@ -216,7 +229,9 @@ class CodecService {
 
   // ── Lifecycle ──
 
+  /** Clear all cached sessions. Bumps generation to invalidate in-flight loads. */
   reset(): void {
+    this.generation++;
     this.encoder = null;
     this.compressors = {};
     this.decoders = {};
