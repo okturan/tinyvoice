@@ -14,6 +14,7 @@ import { ShareModal } from "@/components/ptt/ShareModal";
 import { HexDump } from "@/components/ptt/HexDump";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
 import { ModelManagement } from "@/components/codec/ModelManagement";
+import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
 import { SR, SUGGESTED_ROOMS } from "@/lib/constants";
 import { randomRoomName } from "@/lib/utils/names";
 import { fmt } from "@/lib/format";
@@ -50,6 +51,7 @@ export function PTTPage() {
   const [pttState, setPttState] = useState<PTTState>("disabled");
   const [roomInput, setRoomInput] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [shareData, setShareData] = useState({ url: "", bytes: 0, tokens: 0, duration: "" });
   const [username, setUsername] = useState(() => localStorage.getItem("fc-username") || "");
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -245,15 +247,21 @@ export function PTTPage() {
                   <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
                 </div>
                 {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
-                <button onClick={() => codec.loadModels()} disabled={codec.modelsLoaded || codec.state === "loading"}
+                <button onClick={() => setDownloadOpen(true)} disabled={codec.state === "loading"}
                   className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
-                  {codec.state === "loading" ? "Initializing..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Initialize Models" : "Download Models"}
+                  {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Manage models" : "Choose models"}
                 </button>
+                {codec.state === "loading" && (
+                  <button onClick={codec.abortLoading}
+                    className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer mb-1">
+                    Cancel download
+                  </button>
+                )}
                 {clearConfirm ? (
                   <div className="flex gap-1.5 mt-1">
                     <button onClick={() => { codec.clearModelCache(); setClearConfirm(false); }}
                       className="flex-1 py-1 rounded-md text-[0.65rem] font-medium text-[var(--red)] bg-[color-mix(in_srgb,var(--red)_10%,var(--surface0))] hover:bg-[color-mix(in_srgb,var(--red)_20%,var(--surface0))] transition-colors cursor-pointer">
-                      Yes, delete all
+                      Yes, delete models
                     </button>
                     <button onClick={() => setClearConfirm(false)}
                       className="flex-1 py-1 rounded-md text-[0.65rem] text-[var(--overlay)] bg-[var(--surface0)] hover:bg-[var(--surface1)] transition-colors cursor-pointer">
@@ -263,7 +271,7 @@ export function PTTPage() {
                 ) : (
                   <button onClick={() => setClearConfirm(true)}
                     className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">
-                    Clear Cache
+                    Delete downloaded models
                   </button>
                 )}
               </div>
@@ -367,6 +375,10 @@ export function PTTPage() {
       </div>
 
       <ShareModal open={shareOpen} onOpenChange={setShareOpen} url={shareData.url} bytes={shareData.bytes} tokens={shareData.tokens} duration={shareData.duration} />
+      <ModelDownloadDialog
+        open={downloadOpen}
+        onOpenChange={setDownloadOpen}
+      />
     </>
   );
 }

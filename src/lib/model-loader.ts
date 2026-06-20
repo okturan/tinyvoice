@@ -5,6 +5,10 @@ export interface ModelLoadProgress {
   /** 0..1 */
   fraction: number;
   status: string;
+  modelName?: string;
+  loadedBytes?: number;
+  totalBytes?: number;
+  speedMBps?: number;
 }
 
 export async function loadModel(
@@ -19,11 +23,18 @@ export async function loadModel(
       onProgress({
         fraction: 1,
         status: `${name} (cached, ${(cached.byteLength / 1048576).toFixed(0)} MB)`,
+        modelName: name,
+        loadedBytes: cached.byteLength,
+        totalBytes: cached.byteLength,
       });
       return cached;
     }
     if (cached) {
-      onProgress({ fraction: 0, status: `${name} cache corrupt, re-downloading` });
+      onProgress({
+        fraction: 0,
+        status: `${name} cache corrupt, re-downloading`,
+        modelName: name,
+      });
       await delCache(name);
     }
   } catch {
@@ -42,7 +53,13 @@ export async function loadModel(
 
   const total = +(resp.headers.get("Content-Length") ?? "0");
   const totalMB = total ? (total / 1048576).toFixed(0) + " MB" : "?";
-  onProgress({ fraction: 0, status: `Downloading ${name} (${totalMB})...` });
+  onProgress({
+    fraction: 0,
+    status: `Downloading ${name} (${totalMB})...`,
+    modelName: name,
+    loadedBytes: 0,
+    totalBytes: total || undefined,
+  });
 
   const reader = resp.body.getReader();
   let result: Uint8Array;
@@ -50,13 +67,13 @@ export async function loadModel(
   if (total > 0) {
     // Pre-allocate when size is known to avoid doubling peak memory
     result = new Uint8Array(total);
-    await streamInto(reader, signal, total, totalMB, onProgress, (value, received) => {
+    await streamInto(reader, signal, name, total, totalMB, onProgress, (value, received) => {
       result.set(value, received - value.length);
     });
   } else {
     // Unknown size — collect chunks then merge
     const chunks: Uint8Array[] = [];
-    await streamInto(reader, signal, 0, "?", onProgress, (value) => {
+    await streamInto(reader, signal, name, 0, "?", onProgress, (value) => {
       chunks.push(value);
     });
     const received = chunks.reduce((s, c) => s + c.length, 0);
@@ -81,6 +98,7 @@ export async function loadModel(
 async function streamInto(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   signal: AbortSignal | undefined,
+  modelName: string,
   total: number,
   totalLabel: string,
   onProgress: (info: ModelLoadProgress) => void,
@@ -101,10 +119,14 @@ async function streamInto(
     const frac = total ? received / total : 0;
     const mb = (received / 1048576).toFixed(1);
     const elapsed = (performance.now() - t0) / 1000;
-    const speed = elapsed > 0.5 ? (received / 1048576 / elapsed).toFixed(1) : "\u2014";
+    const speed = elapsed > 0.5 ? received / 1048576 / elapsed : undefined;
     onProgress({
       fraction: frac,
-      status: `${mb} / ${totalLabel} \u00b7 ${speed} MB/s`,
+      status: `${mb} / ${totalLabel} \u00b7 ${speed ? speed.toFixed(1) : "\u2014"} MB/s`,
+      modelName,
+      loadedBytes: received,
+      totalBytes: total || undefined,
+      speedMBps: speed,
     });
   }
 }

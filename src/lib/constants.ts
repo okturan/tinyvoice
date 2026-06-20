@@ -9,6 +9,16 @@ export const PAD = 352;
 export const MODEL_BASE =
   "https://huggingface.co/skymorphosis/focalcodec-onnx/resolve/main/";
 
+export const MODEL_SIZE_ESTIMATES_MB: Record<string, number> = {
+  "encoder.onnx": 595,
+  "compressor_50hz.onnx": 70,
+  "decoder_50hz.onnx": 135,
+  "compressor_25hz.onnx": 74,
+  "decoder_25hz.onnx": 139,
+  "compressor_12_5hz.onnx": 76,
+  "decoder_12_5hz.onnx": 141,
+};
+
 export const RELAY_HTTP =
   location.hostname === "localhost"
     ? "http://localhost:8787"

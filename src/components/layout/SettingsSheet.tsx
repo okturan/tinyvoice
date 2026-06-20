@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useCodecContext } from "@/contexts/CodecContext";
+import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
 import { ModelManagement } from "@/components/codec/ModelManagement";
 
 interface SettingsSheetProps {
@@ -24,6 +25,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
   );
 
   const [confirmClear, setConfirmClear] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   const handleUsernameChange = (value: string) => {
     setUsername(value);
@@ -79,19 +81,27 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
             )}
             <div className="flex gap-2 mt-2.5">
               <button
-                onClick={() => codec.loadModels()}
-                disabled={codec.modelsLoaded || codec.state === "loading"}
+                onClick={() => setDownloadOpen(true)}
+                disabled={codec.state === "loading"}
                 className="flex-1 py-2 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               >
-                {codec.state === "loading" ? "Loading..." : codec.modelsLoaded ? "Ready" : codec.modelsCached ? "Load from cache" : "Download Models"}
+                {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Manage models" : "Choose models"}
               </button>
+              {codec.state === "loading" && (
+                <button
+                  onClick={codec.abortLoading}
+                  className="py-2 px-3 rounded-md text-[0.7rem] font-semibold text-[var(--red)] border border-[var(--red)]/30 bg-[var(--red)]/10 cursor-pointer transition-colors hover:bg-[var(--red)]/20"
+                >
+                  Cancel
+                </button>
+              )}
               {confirmClear ? (
                 <div className="flex gap-1">
                   <button
                     onClick={handleClear}
                     className="py-2 px-3 rounded-md text-[0.7rem] font-semibold text-[var(--red)] border border-[var(--red)]/40 bg-[var(--red)]/10 cursor-pointer transition-colors hover:bg-[var(--red)]/20"
                   >
-                    Yes, delete
+                    Yes, delete models
                   </button>
                   <button
                     onClick={() => setConfirmClear(false)}
@@ -105,7 +115,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                   onClick={handleClear}
                   className="py-2 px-3 rounded-md text-[0.7rem] text-[var(--overlay)] border border-[var(--surface0)] hover:text-[var(--red)] hover:border-[var(--red)]/20 transition-colors cursor-pointer"
                 >
-                  Delete All
+                  Delete downloaded models
                 </button>
               )}
             </div>
@@ -144,6 +154,10 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
             </div>
           </div>
         </div>
+        <ModelDownloadDialog
+          open={downloadOpen}
+          onOpenChange={setDownloadOpen}
+        />
       </SheetContent>
     </Sheet>
   );

@@ -2,9 +2,10 @@ import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import HexSheet from "./HexSheet";
+import { useCodecContext } from "@/contexts/CodecContext";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
-import { SR } from "@/lib/constants";
+import { QUALITY_OPTIONS, SR } from "@/lib/constants";
 import CodeIcon from "@/components/ui/code-icon";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
@@ -19,6 +20,7 @@ interface DecodePlayerProps {
 }
 
 export default function DecodePlayer({ parsed }: DecodePlayerProps) {
+  const codecContext = useCodecContext();
   const [qualityOverride, setQualityOverride] = useState<Quality | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,6 +35,11 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
 
   const tokenCount = parsed.tokenBytes.length / 2;
   const effectiveQuality = qualityOverride || parsed.quality;
+  const qualityReady = codecContext.isQualityLoaded(effectiveQuality);
+  const loadingModels = !qualityReady && codecContext.state === "loading";
+  const effectiveQualityLabel =
+    QUALITY_OPTIONS.find((option) => option.value === effectiveQuality)?.label ??
+    effectiveQuality;
   const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
 
   const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${parsed.hasMagicByte ? "" : " (guessed)"}`;
@@ -82,9 +89,19 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       return;
     }
 
-    setIsLoading(true);
     try {
       const q = effectiveQuality;
+      if (!codecContext.isQualityLoaded(q)) {
+        setStatusType("");
+        setStatus(`Downloading ${effectiveQualityLabel} models...`);
+        const ok = await codecContext.loadModels(q);
+        if (!ok) {
+          setStatus("Download cancelled");
+          return;
+        }
+      }
+
+      setIsLoading(true);
       const audio = await codec.decodeTokens(
         parsed.tokenBytes,
         tokenCount,
@@ -121,7 +138,14 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       setStatus((e as Error).message);
       setIsLoading(false);
     }
-  }, [isPlaying, effectiveQuality, parsed]);
+  }, [isPlaying, effectiveQuality, effectiveQualityLabel, parsed, tokenCount, codecContext]);
+
+  const handleDownloadModels = useCallback(async () => {
+    setStatusType("");
+    setStatus(`Downloading ${effectiveQualityLabel} models...`);
+    const ok = await codecContext.loadModels(effectiveQuality);
+    if (!ok) setStatus("Download cancelled");
+  }, [codecContext, effectiveQuality, effectiveQualityLabel]);
 
   return (
     <div className="text-center">
@@ -136,7 +160,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
                 : "border-[var(--tv-accent)] bg-[var(--mantle)] text-[var(--tv-accent)] hover:scale-105 hover:bg-[var(--surface0)]"
           }`}
           onClick={handlePlay}
-          disabled={isLoading}
+          disabled={isLoading || loadingModels}
         >
           {isLoading ? (
             <svg
@@ -192,6 +216,16 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
         </Button>
       </div>
 
+      {!qualityReady && (
+        <Button
+          className="mb-3"
+          onClick={handleDownloadModels}
+          disabled={loadingModels}
+        >
+          {loadingModels ? "Loading models..." : `Download ${effectiveQualityLabel} models`}
+        </Button>
+      )}
+
       {/* Quality override buttons */}
       <div className="mb-2 flex items-center justify-center gap-1">
         <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
@@ -215,8 +249,11 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
         ))}
       </div>
 
-      {(isLoading || progress > 0) && (
-        <Progress value={progress} className="mx-auto mb-2 h-1" />
+      {(loadingModels || isLoading || progress > 0) && (
+        <Progress
+          value={loadingModels ? codecContext.progress : progress}
+          className="mx-auto mb-2 h-1"
+        />
       )}
 
       <p
@@ -228,7 +265,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
               : "text-[var(--overlay)]"
         }`}
       >
-        {status || initialStatus}
+        {loadingModels ? codecContext.statusText : status || initialStatus}
       </p>
 
       {/* Hex Sheet */}

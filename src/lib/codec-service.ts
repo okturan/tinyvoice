@@ -3,8 +3,8 @@
  * Single instance shared across PTT and QR pages.
  */
 
-import { SR } from "@/lib/constants";
-import { loadModel } from "@/lib/model-loader";
+import { MODEL_SIZE_ESTIMATES_MB, SR } from "@/lib/constants";
+import { loadModel, type ModelLoadProgress } from "@/lib/model-loader";
 import { areCached } from "@/lib/model-cache";
 import { istft } from "@/lib/istft";
 import {
@@ -20,10 +20,7 @@ import {
 
 type OrtSession = ort.InferenceSession;
 
-export interface CodecProgress {
-  fraction: number;
-  status: string;
-}
+export interface CodecProgress extends ModelLoadProgress {}
 
 export type ProgressFn = (info: CodecProgress) => void;
 
@@ -118,36 +115,51 @@ class CodecService {
     onProgress?: ProgressFn,
     signal?: AbortSignal,
   ): Promise<void> {
+    await this.loadModelSet([quality], onProgress, signal);
+  }
+
+  async loadModelSet(
+    qualities: Quality[],
+    onProgress?: ProgressFn,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const uniqueQualities = Array.from(new Set(qualities));
+    if (uniqueQualities.length === 0) return;
+
     // Start iSTFT window fetch early but DO await it
     const windowPromise = this.loadIstftWindow();
+    const progress = this.createModelSetProgress(uniqueQualities, onProgress);
 
-    // Decoder and encoder are independent — download in parallel
     onProgress?.({ fraction: 0, status: "Loading models..." });
     await Promise.all([
-      this.loadDecoder(
-        quality,
-        this.scaleProgress(onProgress, 0, 0.15),
-        signal,
+      this.runTrackedPart(
+        "encoder",
+        "encoder.onnx",
+        progress,
+        () => this.loadEncoder(progress?.encoder, signal),
       ),
-      this.loadEncoder(
-        this.scaleProgress(onProgress, 0.15, 0.65),
-        signal,
-      ),
+      ...uniqueQualities.flatMap((quality) => [
+        this.runTrackedPart(
+          `decoder_${quality}`,
+          `decoder_${quality}.onnx`,
+          progress,
+          () => this.loadDecoder(quality, progress?.[`decoder_${quality}`], signal),
+        ),
+        this.runTrackedPart(
+          `compressor_${quality}`,
+          `compressor_${quality}.onnx`,
+          progress,
+          () => this.loadCompressor(quality, progress?.[`compressor_${quality}`], signal),
+        ),
+      ]),
     ]);
-
-    onProgress?.({ fraction: 0.8, status: "Compressor..." });
-    await this.loadCompressor(
-      quality,
-      this.scaleProgress(onProgress, 0.8, 0.2),
-      signal,
-    );
 
     // Ensure iSTFT window is ready before reporting success
     await windowPromise;
 
     onProgress?.({
       fraction: 1,
-      status: `Ready — encoder + ${quality} comp/dec`,
+      status: `Ready — encoder + ${uniqueQualities.join(", ")} models`,
     });
   }
 
@@ -259,15 +271,6 @@ class CodecService {
 
   // ── Private helpers ──
 
-  private scaleProgress(
-    fn: ProgressFn | undefined,
-    base: number,
-    scale: number,
-  ): ProgressFn | undefined {
-    if (!fn) return undefined;
-    return (info) => fn({ fraction: base + info.fraction * scale, status: info.status });
-  }
-
   private async createSession(
     name: string,
     onProgress?: ProgressFn,
@@ -279,6 +282,112 @@ class CodecService {
     return window.ort.InferenceSession.create(buf, {
       executionProviders: ["wasm"],
     });
+  }
+
+  private async runTrackedPart(
+    key: string,
+    name: string,
+    progress: Record<string, ProgressFn> | undefined,
+    load: () => Promise<OrtSession>,
+  ): Promise<OrtSession> {
+    const session = await load();
+    progress?.[key]?.({
+      fraction: 1,
+      status: `Loaded ${name}`,
+      modelName: name,
+      loadedBytes: this.estimatedBytes(name),
+      totalBytes: this.estimatedBytes(name),
+    });
+    return session;
+  }
+
+  private createModelSetProgress(
+    qualities: Quality[],
+    onProgress?: ProgressFn,
+  ): Record<string, ProgressFn> | undefined {
+    if (!onProgress) return undefined;
+
+    const names: Record<string, string> = {
+      encoder: "encoder.onnx",
+    };
+    for (const quality of qualities) {
+      names[`decoder_${quality}`] = `decoder_${quality}.onnx`;
+      names[`compressor_${quality}`] = `compressor_${quality}.onnx`;
+    }
+    const expectedBytes = Object.fromEntries(
+      Object.entries(names).map(([key, name]) => [key, this.estimatedBytes(name)]),
+    );
+    const loadedBytes = Object.fromEntries(
+      Object.keys(names).map((key) => [key, 0]),
+    );
+    const speeds: Partial<Record<keyof typeof names, number>> = {};
+    const totalBytes = Object.values(expectedBytes).reduce(
+      (sum, bytes) => sum + bytes,
+      0,
+    );
+    let lastFraction = 0;
+    const reports: Record<string, ProgressFn> = {};
+
+    const report =
+      (part: keyof typeof names): ProgressFn =>
+      (info) => {
+        const expected = expectedBytes[part];
+        const nextLoaded =
+          info.loadedBytes ?? Math.max(0, info.fraction) * expected;
+        loadedBytes[part] = Math.max(
+          loadedBytes[part],
+          Math.min(expected, nextLoaded),
+        );
+        if (info.fraction >= 1) {
+          loadedBytes[part] = expected;
+          delete speeds[part];
+        } else if (info.speedMBps !== undefined) {
+          speeds[part] = info.speedMBps;
+        }
+
+        const loaded =
+          Object.values(loadedBytes).reduce((sum, bytes) => sum + bytes, 0);
+        const rawFraction = totalBytes > 0 ? loaded / totalBytes : info.fraction;
+        lastFraction = Math.max(lastFraction, Math.min(rawFraction, 0.995));
+        onProgress({
+          fraction: lastFraction,
+          status: this.formatLoadAllStatus(
+            loaded,
+            totalBytes,
+            Object.values(speeds).reduce<number>(
+              (sum, speed) => sum + (speed ?? 0),
+              0,
+            ),
+            info.status,
+          ),
+        });
+      };
+
+    for (const key of Object.keys(names)) reports[key] = report(key);
+    return reports;
+  }
+
+  private estimatedBytes(name: string): number {
+    return (MODEL_SIZE_ESTIMATES_MB[name] ?? 1) * 1048576;
+  }
+
+  private formatLoadAllStatus(
+    loadedBytes: number,
+    totalBytes: number,
+    speedMBps: number,
+    fallback: string,
+  ): string {
+    if (loadedBytes <= 0 || totalBytes <= 0) return fallback;
+    if (loadedBytes >= totalBytes) {
+      return fallback.startsWith("Initializing")
+        ? "Initializing models..."
+        : fallback;
+    }
+
+    const loaded = (loadedBytes / 1048576).toFixed(1);
+    const total = (totalBytes / 1048576).toFixed(0);
+    const speed = speedMBps > 0 ? ` · ${speedMBps.toFixed(1)} MB/s` : "";
+    return `${loaded} / ~${total} MB${speed}`;
   }
 
   private async decodeFromTokens(

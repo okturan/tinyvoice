@@ -19,7 +19,9 @@ interface CodecContextValue {
   progress: number;
   modelsLoaded: boolean;
   modelsCached: boolean;
-  loadModels: () => Promise<void>;
+  loadedQualities: Quality[];
+  isQualityLoaded: (quality: Quality) => boolean;
+  loadModels: (quality?: Quality | Quality[]) => Promise<boolean>;
   abortLoading: () => void;
   clearModelCache: () => Promise<void>;
   encode: (audio: Float32Array, quality?: Quality) => Promise<Uint8Array>;
@@ -32,7 +34,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CodecState>("idle");
   const [statusText, setStatusText] = useState("Not loaded");
   const [progress, setProgress] = useState(0);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [loadedQualities, setLoadedQualities] = useState<Quality[]>([]);
   const [modelsCached, setModelsCached] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -56,8 +58,19 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadModels = useCallback(async () => {
-    if (modelsLoaded || abortControllerRef.current) return;
+  const isQualityLoaded = useCallback(
+    (quality: Quality) => loadedQualities.includes(quality),
+    [loadedQualities],
+  );
+
+  const modelsLoaded = isQualityLoaded(Quality.Hz50);
+
+  const loadModels = useCallback(async (quality: Quality | Quality[] = Quality.Hz50) => {
+    const requested = Array.isArray(quality) ? quality : [quality];
+    const qualities = Array.from(new Set(requested));
+    const missing = qualities.filter((q) => !loadedQualities.includes(q));
+    if (missing.length === 0) return true;
+    if (abortControllerRef.current) return false;
     setState("loading");
     setProgressThrottled(0);
 
@@ -65,8 +78,8 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     abortControllerRef.current = controller;
 
     try {
-      await codec.loadAll(
-        Quality.Hz50,
+      await codec.loadModelSet(
+        missing,
         (info) => {
           setProgressThrottled(info.fraction * 100);
           setStatusText(info.status);
@@ -75,10 +88,14 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       );
 
       setState("ready");
-      setStatusText("Ready \u2014 encoder + 50hz comp/dec");
-      setModelsLoaded(true);
+      setStatusText(`Ready \u2014 ${qualities.join(", ")} models`);
+      setLoadedQualities((current) =>
+        Array.from(new Set([...current, ...missing])),
+      );
+      setModelsCached(true);
+      return true;
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (e instanceof DOMException && e.name === "AbortError") return false;
       setState("error");
       setStatusText("Error");
       const msg = e instanceof Error ? e.message : String(e);
@@ -87,7 +104,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     } finally {
       abortControllerRef.current = null;
     }
-  }, [modelsLoaded, setProgressThrottled]);
+  }, [loadedQualities, setProgressThrottled]);
 
   const abortLoading = useCallback(() => {
     if (abortControllerRef.current) {
@@ -115,9 +132,9 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     await clearCache();
     codec.reset();
     setState("idle");
-    setStatusText("Cache cleared");
+    setStatusText("Downloaded model cache cleared");
     setProgress(0);
-    setModelsLoaded(false);
+    setLoadedQualities([]);
     setModelsCached(false);
   }, []);
 
@@ -129,6 +146,8 @@ export function CodecProvider({ children }: { children: ReactNode }) {
         progress,
         modelsLoaded,
         modelsCached,
+        loadedQualities,
+        isQualityLoaded,
         loadModels,
         abortLoading,
         clearModelCache: clearModelCacheFn,

@@ -1,12 +1,8 @@
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
 import TrashIcon from "@/components/ui/trash-icon";
-import DownloadIcon from "@/components/ui/download-icon";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { useCodecContext } from "@/contexts/CodecContext";
 import { useModelCache } from "@/hooks/useModelCache";
-import { delCache, clearModelCache } from "@/lib/model-cache";
-import { loadModel } from "@/lib/model-loader";
+import { delCache } from "@/lib/model-cache";
 
 interface ModelDef {
   name: string;
@@ -57,9 +53,8 @@ const MODEL_GROUPS: ModelGroup[] = [
 const ALL_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
 
 export function ModelManagement() {
+  const codec = useCodecContext();
   const { cachedKeys, loading, refresh } = useModelCache();
-  const [downloading, setDownloading] = useState<string | null>(null);
-  const [dlProgress, setDlProgress] = useState(0);
 
   const totalCachedMB = ALL_MODELS
     .filter((m) => cachedKeys.has(m.name))
@@ -71,21 +66,8 @@ export function ModelManagement() {
   };
 
   const handleClearAll = async () => {
-    await clearModelCache();
+    await codec.clearModelCache();
     refresh();
-  };
-
-  const handleDownload = async (name: string) => {
-    if (downloading) return;
-    setDownloading(name);
-    setDlProgress(0);
-    try {
-      await loadModel(name, info => setDlProgress(Math.round(info.fraction * 100)));
-      refresh();
-    } catch {
-      // download failed or aborted
-    }
-    setDownloading(null);
   };
 
   return (
@@ -111,7 +93,6 @@ export function ModelManagement() {
             <div className="flex flex-col gap-1">
               {group.models.map(model => {
                 const isCached = cachedKeys.has(model.name);
-                const isDownloading = downloading === model.name;
 
                 return (
                   <div key={model.name} className="flex items-center gap-2 py-1.5 px-2.5 rounded-md bg-[var(--base)]">
@@ -123,12 +104,7 @@ export function ModelManagement() {
                       <span className="text-[0.55rem] text-[var(--surface2)]">{model.desc}</span>
                     </div>
 
-                    {isDownloading ? (
-                      <div className="flex items-center gap-2 min-w-[80px]">
-                        <Progress value={dlProgress} className="h-1 flex-1" />
-                        <span className="text-[0.5rem] text-[var(--overlay)] tabular-nums w-7 text-right">{dlProgress}%</span>
-                      </div>
-                    ) : isCached ? (
+                    {isCached ? (
                       <div className="flex items-center gap-1">
                         <Badge variant="secondary" className="text-[0.5rem] px-1.5 py-0 bg-[var(--green)]/15 text-[var(--green)] border-0">
                           cached
@@ -142,14 +118,9 @@ export function ModelManagement() {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => handleDownload(model.name)}
-                        disabled={!!downloading}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-[0.55rem] font-medium text-[var(--tv-accent)] hover:bg-[var(--tv-accent)]/10 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                      >
-                        {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <DownloadIcon size={12} />}
-                        <span>Download</span>
-                      </button>
+                      <Badge variant="secondary" className="text-[0.5rem] px-1.5 py-0 bg-[var(--surface0)] text-[var(--overlay)] border-0">
+                        not cached
+                      </Badge>
                     )}
                   </div>
                 );
@@ -168,8 +139,9 @@ export function ModelManagement() {
           onClick={handleClearAll}
           disabled={cachedKeys.size === 0}
           className="text-[0.6rem] text-[var(--overlay)] hover:text-[var(--red)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
+          title="Delete all downloaded model files from browser storage"
         >
-          Clear All
+          Delete downloaded models
         </button>
       </div>
     </div>
