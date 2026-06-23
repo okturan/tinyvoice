@@ -53,11 +53,11 @@ export function PTTPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [shareData, setShareData] = useState({ url: "", bytes: 0, tokens: 0, duration: "" });
-  const [username, setUsername] = useState(() => localStorage.getItem("fc-username") || "");
   const [clearConfirm, setClearConfirm] = useState(false);
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const isPttReady = codec.modelsLoaded && room.isConnected;
+  const savedUsername = room.username.trim();
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "dim", hexData?: Uint8Array, hexType?: "sent" | "recv") => {
     setLogEntries(prev => {
@@ -66,7 +66,7 @@ export function PTTPage() {
     });
   }, []);
 
-  const handleUsernameChange = (v: string) => { setUsername(v); localStorage.setItem("fc-username", v); };
+  const handleUsernameChange = (v: string) => room.setUsername(v);
 
   // ── Room events ──
   const prevConnected = useRef(room.isConnected);
@@ -181,8 +181,13 @@ export function PTTPage() {
               {/* Username */}
               <div className="p-3 border-b border-[var(--surface0)]">
                 <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">You</div>
-                <input type="text" spellCheck={false} value={username} onChange={e => handleUsernameChange(e.target.value)}
+                <input type="text" spellCheck={false} value={room.username} onChange={e => handleUsernameChange(e.target.value)}
                   placeholder="your name" className="w-full px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
+                <div className="mt-1 text-[0.6rem] text-[var(--overlay)]">
+                  {savedUsername
+                    ? room.isConnected ? `Visible as ${savedUsername}` : `Saved as ${savedUsername}`
+                    : "Using anon"}
+                </div>
               </div>
 
               {/* Room */}
@@ -249,7 +254,7 @@ export function PTTPage() {
                 {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
                 <button onClick={() => setDownloadOpen(true)} disabled={codec.state === "loading"}
                   className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
-                  {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Manage models" : "Choose models"}
+                  {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Change models" : "Choose models"}
                 </button>
                 {codec.state === "loading" && (
                   <button onClick={codec.abortLoading}

@@ -159,7 +159,7 @@ class CodecService {
 
     onProgress?.({
       fraction: 1,
-      status: `Ready — encoder + ${uniqueQualities.join(", ")} models`,
+      status: `Downloaded ${uniqueQualities.map((quality) => quality === Quality.Hz12_5 ? "12.5hz" : quality).join(", ")} models loaded`,
     });
   }
 
@@ -401,7 +401,15 @@ class CodecService {
       this.loadIstftWindow(),
       (async () => {
         onProgress?.({ fraction: 0.05, status: "Loading decoder..." });
-        return this.loadDecoder(quality, undefined, signal);
+        return this.loadDecoder(
+          quality,
+          (info) =>
+            onProgress?.({
+              fraction: info.fraction * 0.75,
+              status: info.status,
+            }),
+          signal,
+        );
       })(),
     ]);
     onProgress?.({ fraction: 0.8, status: "Decoding..." });

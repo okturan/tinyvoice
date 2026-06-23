@@ -5,7 +5,8 @@ import HexSheet from "./HexSheet";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
-import { QUALITY_OPTIONS, SR } from "@/lib/constants";
+import { SR } from "@/lib/constants";
+import { autoDecoderLabel, qualityLabel } from "@/lib/format";
 import CodeIcon from "@/components/ui/code-icon";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
@@ -37,12 +38,11 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const effectiveQuality = qualityOverride || parsed.quality;
   const qualityReady = codecContext.isQualityLoaded(effectiveQuality);
   const loadingModels = !qualityReady && codecContext.state === "loading";
-  const effectiveQualityLabel =
-    QUALITY_OPTIONS.find((option) => option.value === effectiveQuality)?.label ??
-    effectiveQuality;
+  const effectiveQualityLabel = qualityLabel(effectiveQuality);
   const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
+  const autoLabel = autoDecoderLabel(parsed.quality, parsed.hasMagicByte);
 
-  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${parsed.quality}${parsed.hasMagicByte ? "" : " (guessed)"}`;
+  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${qualityLabel(parsed.quality)}${parsed.hasMagicByte ? "" : " (guessed)"}`;
 
   const handleQualityChange = useCallback(
     (q: string) => {
@@ -50,11 +50,11 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       setQualityOverride(newQ);
       audioBufferRef.current = null;
       setStatus(
-        `Decoder set to ${newQ || `auto (${parsed.quality})`}`,
+        `Decoder set to ${newQ ? qualityLabel(newQ) : autoLabel}`,
       );
       setStatusType("");
     },
-    [parsed.quality],
+    [autoLabel],
   );
 
   const handlePlay = useCallback(async () => {
@@ -227,7 +227,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       )}
 
       {/* Quality override buttons */}
-      <div className="mb-2 flex items-center justify-center gap-1">
+      <div className="mb-2 flex flex-wrap items-center justify-center gap-1">
         <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
           Decoder:
         </span>
@@ -244,7 +244,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
             }`}
             onClick={() => handleQualityChange(q.value)}
           >
-            {q.label}
+            {q.value === "auto" ? autoLabel : q.label}
           </Button>
         ))}
       </div>

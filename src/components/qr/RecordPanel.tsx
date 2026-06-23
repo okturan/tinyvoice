@@ -10,8 +10,9 @@ import { useCodecContext } from "@/contexts/CodecContext";
 import { codec as codecService } from "@/lib/codec-service";
 import { areCached } from "@/lib/model-cache";
 import { Quality } from "@/types/codec";
-import { SR } from "@/lib/constants";
+import { QUALITY_OPTIONS, SR } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
+import { qualityLabel } from "@/lib/format";
 
 type RecordState = "idle" | "recording" | "encoding";
 
@@ -49,17 +50,52 @@ export default function RecordPanel() {
   const [recTime, setRecTime] = useState("0.0s");
   const recStartRef = useRef(0);
   const workletRegisteredRef = useRef(false);
+  const autoPickedQualityRef = useRef(false);
+  const userPickedQualityRef = useRef(false);
   const modelsLoaded = codecContext.isQualityLoaded(quality);
   const readyToRecord = modelsLoaded && audioReady;
   const loadingModels = !modelsLoaded && codecContext.state === "loading";
   const displayStatus = loadingModels ? codecContext.statusText : status;
   const displayStatusType = loadingModels ? "" : statusType;
 
+  const handleQualityChange = useCallback((next: Quality) => {
+    userPickedQualityRef.current = true;
+    setQuality(next);
+  }, []);
+
+  useEffect(() => {
+    if (autoPickedQualityRef.current || userPickedQualityRef.current) return;
+
+    const loaded = codecContext.loadedQualities[0];
+    if (loaded && loaded !== quality) {
+      autoPickedQualityRef.current = true;
+      setQuality(loaded);
+      setStatus(`Selected downloaded ${qualityLabel(loaded)} models`);
+      return;
+    }
+
+    const keys = [
+      "encoder.onnx",
+      ...QUALITY_OPTIONS.map((option) => `compressor_${option.value}.onnx`),
+    ];
+    areCached(keys).then((results) => {
+      if (autoPickedQualityRef.current || userPickedQualityRef.current) return;
+      const cached = QUALITY_OPTIONS.find(
+        (option) => results["encoder.onnx"] && results[`compressor_${option.value}.onnx`],
+      );
+      if (cached && cached.value !== quality) {
+        autoPickedQualityRef.current = true;
+        setQuality(cached.value);
+        setStatus(`Selected downloaded ${qualityLabel(cached.value)} models`);
+      }
+    });
+  }, [codecContext.loadedQualities, quality]);
+
   // Check which models are cached when quality changes
   useEffect(() => {
     if (modelsLoaded) {
       setCacheState("all");
-      setStatus(`Models loaded (${quality})`);
+      setStatus(`Downloaded ${qualityLabel(quality)} models loaded`);
       return;
     }
     const encKey = "encoder.onnx";
@@ -69,10 +105,10 @@ export default function RecordPanel() {
       const comp = results[compKey];
       if (enc && comp) {
         setCacheState("all");
-        setStatus("Ready to initialize");
+        setStatus("Downloaded models cached; load to use");
       } else if (enc || comp) {
         setCacheState("partial");
-        setStatus(enc ? `${quality} compressor needs download` : "Encoder needs download");
+        setStatus(enc ? `${qualityLabel(quality)} compressor needs download` : "Encoder needs download");
       } else {
         setCacheState("none");
         setStatus("");
@@ -135,7 +171,7 @@ export default function RecordPanel() {
       }
       setAudioReady(true);
       setStatusType("ok");
-      setStatus(`Ready (${quality}) \u2014 hold to record`);
+      setStatus(`Downloaded ${qualityLabel(quality)} models loaded`);
     } catch (e) {
       setStatusType("err");
       setStatus((e as Error).message);
@@ -292,7 +328,7 @@ export default function RecordPanel() {
           <div className="text-[0.6rem] text-[var(--overlay)] uppercase tracking-widest font-semibold mb-2">
             Quality
           </div>
-          <QualityPicker value={quality} onChange={setQuality} refreshKey={codecContext.loadedQualities.length} />
+          <QualityPicker value={quality} onChange={handleQualityChange} refreshKey={codecContext.loadedQualities.length} />
         </CardContent>
       </Card>
 
@@ -312,7 +348,7 @@ export default function RecordPanel() {
                 {loadingModels
                   ? "Loading models..."
                   : cacheState === "all"
-                    ? "Load models"
+                    ? "Load downloaded models"
                     : "Choose models"}
               </Button>
               {loadingModels && (
@@ -333,7 +369,7 @@ export default function RecordPanel() {
               <div className="flex items-center gap-2">
                 <div className="size-2 rounded-full bg-[var(--green)]" />
                 <span className="text-xs text-[var(--green)]">
-                  Models loaded ({quality})
+                  Downloaded {qualityLabel(quality)} models loaded
                 </span>
               </div>
               {!audioReady && (

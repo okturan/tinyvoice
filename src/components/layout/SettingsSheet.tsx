@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useCodecContext } from "@/contexts/CodecContext";
+import { useRoom } from "@/contexts/RoomContext";
 import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
 import { ModelManagement } from "@/components/codec/ModelManagement";
 
@@ -20,17 +21,11 @@ interface SettingsSheetProps {
 export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
   const { theme, setTheme, themes } = useThemeContext();
   const codec = useCodecContext();
-  const [username, setUsername] = useState(
-    () => (typeof localStorage !== "undefined" ? localStorage.getItem("fc-username") || "" : "")
-  );
+  const room = useRoom();
+  const savedUsername = room.username.trim();
 
   const [confirmClear, setConfirmClear] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
-
-  const handleUsernameChange = (value: string) => {
-    setUsername(value);
-    localStorage.setItem("fc-username", value);
-  };
 
   const handleClear = () => {
     if (!confirmClear) {
@@ -57,12 +52,17 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
             </label>
             <input
               type="text"
-              value={username}
-              onChange={e => handleUsernameChange(e.target.value)}
+              value={room.username}
+              onChange={e => room.setUsername(e.target.value)}
               placeholder="your name"
               spellCheck={false}
               className="w-full mt-1.5 px-3 py-2 rounded-md bg-[var(--base)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors"
             />
+            <div className="mt-1 text-[0.6rem] text-[var(--overlay)]">
+              {savedUsername
+                ? room.isConnected ? `Visible as ${savedUsername}` : `Saved as ${savedUsername}`
+                : "Using anon"}
+            </div>
           </div>
 
           <Separator className="bg-[var(--surface0)]" />
@@ -85,7 +85,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                 disabled={codec.state === "loading"}
                 className="flex-1 py-2 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               >
-                {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Manage models" : "Choose models"}
+                {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Change models" : "Choose models"}
               </button>
               {codec.state === "loading" && (
                 <button

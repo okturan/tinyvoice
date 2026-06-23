@@ -43,15 +43,10 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [username, setUsernameState] = useState(loadUsername);
   const packetHandlers = useRef(new Set<(data: ArrayBuffer) => void>());
 
-  const setUsername = useCallback((name: string) => {
-    setUsernameState(name);
-    localStorage.setItem("fc-username", name);
-  }, []);
-
   const { activeRooms, recentRooms, addRecentRoom, startPolling, stopPolling } =
     useRooms();
 
-  const { isConnected, connect, disconnect, send, users, userCount } =
+  const { isConnected, connect, disconnect, send, updateName, users, userCount } =
     useWebSocket({
       onBinaryMessage: (data) => {
         for (const handler of packetHandlers.current) {
@@ -68,6 +63,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
         startPolling();
       },
     });
+
+  const setUsername = useCallback((name: string) => {
+    setUsernameState(name);
+    localStorage.setItem("fc-username", name);
+    updateName(name.trim() || "anon");
+  }, [updateName]);
 
   const joinRoom = useCallback(
     (name: string) => {

@@ -10,6 +10,7 @@ import {
 import { codec } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
 import { clearModelCache as clearCache } from "@/lib/model-cache";
+import { qualityLabel } from "@/lib/format";
 
 export type CodecState = "idle" | "loading" | "ready" | "error";
 
@@ -45,7 +46,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     codec.isCoreModelsCached().then((cached) => {
       if (cached) {
         setModelsCached(true);
-        setStatusText("Ready to initialize");
+        setStatusText("Downloaded models cached; load to use");
       }
     });
   }, []);
@@ -63,7 +64,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     [loadedQualities],
   );
 
-  const modelsLoaded = isQualityLoaded(Quality.Hz50);
+  const modelsLoaded = loadedQualities.length > 0;
 
   const loadModels = useCallback(async (quality: Quality | Quality[] = Quality.Hz50) => {
     const requested = Array.isArray(quality) ? quality : [quality];
@@ -88,7 +89,9 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       );
 
       setState("ready");
-      setStatusText(`Ready \u2014 ${qualities.join(", ")} models`);
+      setStatusText(
+        `Downloaded ${qualities.map(qualityLabel).join(", ")} models loaded`,
+      );
       setLoadedQualities((current) =>
         Array.from(new Set([...current, ...missing])),
       );
@@ -118,10 +121,10 @@ export function CodecProvider({ children }: { children: ReactNode }) {
 
   const encode = useCallback(
     async (audio: Float32Array, quality?: Quality): Promise<Uint8Array> => {
-      const result = await codec.encode(audio, quality ?? Quality.Hz50);
+      const result = await codec.encode(audio, quality ?? loadedQualities[0] ?? Quality.Hz50);
       return result.packed;
     },
-    [],
+    [loadedQualities],
   );
 
   const decode = useCallback(async (packet: Uint8Array): Promise<Float32Array> => {

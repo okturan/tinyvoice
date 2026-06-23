@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { codec } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
-import { Play, Square } from "lucide-react";
+import { autoDecoderLabel } from "@/lib/format";
+import { unpackTokens } from "@/lib/wire-format";
+import { Loader2, Play, Square } from "lucide-react";
 import CopyIcon from "@/components/ui/copy-icon";
 import DownloadIcon from "@/components/ui/download-icon";
 import CodeIcon from "@/components/ui/code-icon";
@@ -31,6 +34,8 @@ export default function QRResult({
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
   const [previewStatus, setPreviewStatus] = useState("");
   const [decoderOverride, setDecoderOverride] = useState<Quality | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -39,6 +44,10 @@ export default function QRResult({
 
   const b64 = bytesToBase64(packed);
   const playUrl = `${window.location.origin}/qr?v=${encodeURIComponent(b64)}`;
+  const parsedPacket = unpackTokens(packed);
+  const autoLabel = parsedPacket
+    ? autoDecoderLabel(parsedPacket.quality, parsedPacket.hasMagicByte)
+    : "Auto";
 
   useEffect(() => {
     QRCode.toDataURL(playUrl, {
@@ -71,6 +80,7 @@ export default function QRResult({
   }, []);
 
   const preview = useCallback(async () => {
+    if (previewLoading) return;
     if (playing && sourceRef.current) {
       sourceRef.current.stop();
       sourceRef.current = null;
@@ -97,11 +107,16 @@ export default function QRResult({
     }
 
     setPreviewStatus("Decoding...");
+    setPreviewProgress(0);
+    setPreviewLoading(true);
     try {
       const audio = await codec.decode(
         packed,
         decoderOverride ?? undefined,
-        (info) => setPreviewStatus(info.status),
+        (info) => {
+          setPreviewProgress(info.fraction * 100);
+          setPreviewStatus(info.status);
+        },
       );
 
       if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
@@ -121,6 +136,8 @@ export default function QRResult({
       sourceRef.current = src;
       setPlaying(true);
       setPreviewStatus("");
+      setPreviewProgress(0);
+      setPreviewLoading(false);
       src.onended = () => {
         setPlaying(false);
         sourceRef.current = null;
@@ -128,8 +145,10 @@ export default function QRResult({
       src.start();
     } catch (e) {
       setPreviewStatus((e as Error).message);
+      setPreviewProgress(0);
+      setPreviewLoading(false);
     }
-  }, [packed, playing, decoderOverride]);
+  }, [packed, playing, decoderOverride, previewLoading]);
 
   return (
     <div className="flex flex-col items-center gap-3">
@@ -168,8 +187,14 @@ export default function QRResult({
           size="sm"
           className={`rounded-full ${playing ? "border-[var(--green)] text-[var(--green)]" : ""}`}
           onClick={preview}
+          disabled={previewLoading}
         >
-          {playing ? (
+          {previewLoading ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              Loading...
+            </>
+          ) : playing ? (
             <>
               <Square className="size-3 fill-current" />
               Playing...
@@ -201,7 +226,7 @@ export default function QRResult({
       </div>
 
       {/* Decoder override */}
-      <div className="flex items-center justify-center gap-1">
+      <div className="flex flex-wrap items-center justify-center gap-1">
         <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
           Decoder:
         </span>
@@ -218,10 +243,14 @@ export default function QRResult({
             }`}
             onClick={() => handleDecoderChange(opt.value)}
           >
-            {opt.label}
+            {opt.value === "auto" ? autoLabel : opt.label}
           </Button>
         ))}
       </div>
+
+      {previewLoading && (
+        <Progress value={previewProgress} className="h-1.5 w-full max-w-[260px]" />
+      )}
 
       {previewStatus && (
         <p className="text-xs text-[var(--overlay)]">{previewStatus}</p>

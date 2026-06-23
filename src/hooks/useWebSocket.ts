@@ -11,6 +11,7 @@ const INITIAL_RECONNECT_DELAY = 1_000;
 export interface UseWebSocketReturn {
   isConnected: boolean;
   connect: (room: string, username: string) => void;
+  updateName: (username: string) => void;
   disconnect: () => void;
   send: (data: ArrayBuffer) => void;
   users: string[];
@@ -124,6 +125,15 @@ export function useWebSocket(callbacks: {
     callbacksRef.current.onDisconnected?.();
   }, [cleanup]);
 
+  const updateName = useCallback((username: string) => {
+    currentUsername.current = username;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const hello: HelloMessage = { type: "hello", name: username };
+      ws.send(JSON.stringify(hello));
+    }
+  }, []);
+
   const send = useCallback((data: ArrayBuffer) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -134,6 +144,7 @@ export function useWebSocket(callbacks: {
   return {
     isConnected,
     connect,
+    updateName,
     disconnect,
     send,
     users,
