@@ -10,7 +10,6 @@ import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { ShareModal } from "@/components/ptt/ShareModal";
 import { HexDump } from "@/components/ptt/HexDump";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
 import { ModelManagement } from "@/components/codec/ModelManagement";
@@ -50,10 +49,9 @@ export function PTTPage() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [pttState, setPttState] = useState<PTTState>("disabled");
   const [roomInput, setRoomInput] = useState("");
-  const [shareOpen, setShareOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
-  const [shareData, setShareData] = useState({ url: "", bytes: 0, tokens: 0, duration: "" });
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [openHexIds, setOpenHexIds] = useState<Set<number>>(() => new Set());
 
   const logEndRef = useRef<HTMLDivElement>(null);
   const isPttReady = codec.modelsLoaded && room.isConnected;
@@ -67,6 +65,14 @@ export function PTTPage() {
   }, []);
 
   const handleUsernameChange = (v: string) => room.setUsername(v);
+  const toggleHex = useCallback((id: number) => {
+    setOpenHexIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // ── Room events ──
   const prevConnected = useRef(room.isConnected);
@@ -95,7 +101,7 @@ export function PTTPage() {
     const packet = new Uint8Array(data);
     stats.addRecv(packet.length);
     stats.setLastRecv(packet.length);
-    addLog(`Received ${fmt(packet.length)}`, "recv");
+    addLog(`Received ${fmt(packet.length)}`, "recv", packet, "recv");
     try {
       const t0 = performance.now();
       const audio = await codec.decode(packet);
@@ -135,11 +141,8 @@ export function PTTPage() {
       stats.setLastSent(packet.length);
       stats.addSent(packet.length);
       addLog(`Encoded ${dt.toFixed(2)}s \u2192 ${(packet.length - 1) / 2} tokens`, "ok");
-      const b64 = btoa(String.fromCharCode(...packet));
-      setShareData({ url: `${location.origin}/qr?v=${encodeURIComponent(b64)}`, bytes: packet.length, tokens: (packet.length - 1) / 2, duration: dur });
-      setShareOpen(true);
       room.sendPacket(packet.buffer);
-      addLog(`Sent ${fmt(packet.length)}`, "ok");
+      addLog(`Sent ${fmt(packet.length)}`, "ok", packet, "sent");
     } catch (e) {
       addLog("Encode: " + (e instanceof Error ? e.message : String(e)), "warn");
     }
@@ -365,8 +368,27 @@ export function PTTPage() {
                       )}
                       {logEntries.map(entry => (
                         <div key={entry.id} className="log-entry">
-                          {entry.message && <div className={LOG_COLORS[entry.type]}>{entry.message}</div>}
-                          {entry.hexData && entry.hexType && <HexDump data={entry.hexData} type={entry.hexType} />}
+                          {entry.message && (
+                            <div
+                              className={`${LOG_COLORS[entry.type]} ${entry.hexData ? "cursor-pointer select-none" : ""}`}
+                              onClick={() => entry.hexData && toggleHex(entry.id)}
+                            >
+                              {entry.hexData && (
+                                <span className={`mr-1 inline-block text-[0.55rem] text-[var(--overlay)] transition-transform ${openHexIds.has(entry.id) ? "rotate-90" : ""}`}>
+                                  {"\u25b8"}
+                                </span>
+                              )}
+                              {entry.message}
+                            </div>
+                          )}
+                          {entry.hexData && entry.hexType && (
+                            <HexDump
+                              data={entry.hexData}
+                              type={entry.hexType}
+                              open={openHexIds.has(entry.id)}
+                              showTrigger={false}
+                            />
+                          )}
                         </div>
                       ))}
                       <div ref={logEndRef} />
@@ -379,7 +401,6 @@ export function PTTPage() {
         </div>
       </div>
 
-      <ShareModal open={shareOpen} onOpenChange={setShareOpen} url={shareData.url} bytes={shareData.bytes} tokens={shareData.tokens} duration={shareData.duration} />
       <ModelDownloadDialog
         open={downloadOpen}
         onOpenChange={setDownloadOpen}

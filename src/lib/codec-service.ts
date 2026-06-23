@@ -159,7 +159,7 @@ class CodecService {
 
     onProgress?.({
       fraction: 1,
-      status: `Downloaded ${uniqueQualities.map((quality) => quality === Quality.Hz12_5 ? "12.5hz" : quality).join(", ")} models loaded`,
+      status: `${uniqueQualities.map((quality) => quality === Quality.Hz12_5 ? "12.5hz" : quality).join(", ")} loaded`,
     });
   }
 

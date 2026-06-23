@@ -46,7 +46,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     codec.isCoreModelsCached().then((cached) => {
       if (cached) {
         setModelsCached(true);
-        setStatusText("Downloaded models cached; load to use");
+        setStatusText("Cached models available");
       }
     });
   }, []);
@@ -90,7 +90,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
 
       setState("ready");
       setStatusText(
-        `Downloaded ${qualities.map(qualityLabel).join(", ")} models loaded`,
+        `${qualities.map(qualityLabel).join(", ")} loaded`,
       );
       setLoadedQualities((current) =>
         Array.from(new Set([...current, ...missing])),

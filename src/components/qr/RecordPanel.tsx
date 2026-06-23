@@ -60,6 +60,9 @@ export default function RecordPanel() {
 
   const handleQualityChange = useCallback((next: Quality) => {
     userPickedQualityRef.current = true;
+    setEncodeResult(null);
+    setHexData(null);
+    setEncodeProgress(0);
     setQuality(next);
   }, []);
 
@@ -70,7 +73,7 @@ export default function RecordPanel() {
     if (loaded && loaded !== quality) {
       autoPickedQualityRef.current = true;
       setQuality(loaded);
-      setStatus(`Selected downloaded ${qualityLabel(loaded)} models`);
+      setStatus(`${qualityLabel(loaded)} loaded`);
       return;
     }
 
@@ -86,7 +89,7 @@ export default function RecordPanel() {
       if (cached && cached.value !== quality) {
         autoPickedQualityRef.current = true;
         setQuality(cached.value);
-        setStatus(`Selected downloaded ${qualityLabel(cached.value)} models`);
+        setStatus(`${qualityLabel(cached.value)} loaded`);
       }
     });
   }, [codecContext.loadedQualities, quality]);
@@ -95,7 +98,7 @@ export default function RecordPanel() {
   useEffect(() => {
     if (modelsLoaded) {
       setCacheState("all");
-      setStatus(`Downloaded ${qualityLabel(quality)} models loaded`);
+      setStatus(`${qualityLabel(quality)} loaded`);
       return;
     }
     const encKey = "encoder.onnx";
@@ -105,7 +108,7 @@ export default function RecordPanel() {
       const comp = results[compKey];
       if (enc && comp) {
         setCacheState("all");
-        setStatus("Downloaded models cached; load to use");
+        setStatus("Cached models available");
       } else if (enc || comp) {
         setCacheState("partial");
         setStatus(enc ? `${qualityLabel(quality)} compressor needs download` : "Encoder needs download");
@@ -171,7 +174,7 @@ export default function RecordPanel() {
       }
       setAudioReady(true);
       setStatusType("ok");
-      setStatus(`Downloaded ${qualityLabel(quality)} models loaded`);
+      setStatus(`${qualityLabel(quality)} loaded`);
     } catch (e) {
       setStatusType("err");
       setStatus((e as Error).message);
@@ -185,6 +188,9 @@ export default function RecordPanel() {
 
       isRecRef.current = true;
       chunksRef.current = [];
+      setEncodeResult(null);
+      setHexData(null);
+      setEncodeProgress(0);
       setRecordState("recording");
       setStatus("Recording...");
       setStatusType("");
@@ -348,7 +354,7 @@ export default function RecordPanel() {
                 {loadingModels
                   ? "Loading models..."
                   : cacheState === "all"
-                    ? "Load downloaded models"
+                    ? "Load cached models"
                     : "Choose models"}
               </Button>
               {loadingModels && (
@@ -369,7 +375,7 @@ export default function RecordPanel() {
               <div className="flex items-center gap-2">
                 <div className="size-2 rounded-full bg-[var(--green)]" />
                 <span className="text-xs text-[var(--green)]">
-                  Downloaded {qualityLabel(quality)} models loaded
+                  {qualityLabel(quality)} loaded
                 </span>
               </div>
               {!audioReady && (
