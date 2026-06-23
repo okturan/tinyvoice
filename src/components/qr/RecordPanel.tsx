@@ -57,6 +57,8 @@ export default function RecordPanel() {
   const loadingModels = !modelsLoaded && codecContext.state === "loading";
   const displayStatus = loadingModels ? codecContext.statusText : status;
   const displayStatusType = loadingModels ? "" : statusType;
+  const loadedStatus = `${qualityLabel(quality)} loaded`;
+  const showDisplayStatus = Boolean(displayStatus && (!modelsLoaded || displayStatus !== loadedStatus));
 
   const handleQualityChange = useCallback((next: Quality) => {
     userPickedQualityRef.current = true;
@@ -98,7 +100,7 @@ export default function RecordPanel() {
   useEffect(() => {
     if (modelsLoaded) {
       setCacheState("all");
-      setStatus(`${qualityLabel(quality)} loaded`);
+      setStatus(loadedStatus);
       return;
     }
     const encKey = "encoder.onnx";
@@ -117,7 +119,7 @@ export default function RecordPanel() {
         setStatus("");
       }
     });
-  }, [quality, modelsLoaded]);
+  }, [quality, modelsLoaded, loadedStatus]);
 
   // Waveform drawing
   const drawWaveform = useCallback(() => {
@@ -375,7 +377,7 @@ export default function RecordPanel() {
               <div className="flex items-center gap-2">
                 <div className="size-2 rounded-full bg-[var(--green)]" />
                 <span className="text-xs text-[var(--green)]">
-                  {qualityLabel(quality)} loaded
+                  {loadedStatus}
                 </span>
               </div>
               {!audioReady && (
@@ -388,7 +390,7 @@ export default function RecordPanel() {
               )}
             </div>
           )}
-          {displayStatus && <p
+          {showDisplayStatus && <p
             className={`mt-2 min-h-[1.2em] text-[0.7rem] ${
               displayStatusType === "ok"
                 ? "text-[var(--green)]"
