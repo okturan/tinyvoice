@@ -7,5 +7,6 @@ dist/
 .DS_Store
 dist/
 .claude/worktrees/
+**/.claude/settings.local.json
 .playwright-mcp/
 *.png

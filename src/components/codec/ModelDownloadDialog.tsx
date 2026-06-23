@@ -187,7 +187,7 @@ export function ModelDownloadDialog({
                         ? "Loaded"
                         : isCached && encoderCached
                           ? "Load from cache"
-                          : `Download only (~${packageSize(option.value)} MB)`}
+                          : `Download (~${packageSize(option.value)} MB)`}
                     </Button>
                   </div>
                 );
