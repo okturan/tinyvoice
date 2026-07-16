@@ -42,7 +42,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
   const autoLabel = autoDecoderLabel(parsed.quality, parsed.hasMagicByte);
 
-  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${qualityLabel(parsed.quality)}${parsed.hasMagicByte ? "" : " (guessed)"}`;
+  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${qualityLabel(parsed.quality)}${parsed.hasMagicByte ? "" : " (legacy fallback)"}`;
 
   const handleQualityChange = useCallback(
     (q: string) => {

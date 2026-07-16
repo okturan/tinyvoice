@@ -3,12 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "npm@11.17.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -b && tsc -p worker/tsconfig.json && tsc -p tsconfig.test.json",
+    "worker:types": "wrangler types --config worker/wrangler.jsonc worker/worker-configuration.d.ts",
+    "worker:types:check": "wrangler types --config worker/wrangler.jsonc worker/worker-configuration.d.ts --check",
+    "worker:dry-run": "wrangler deploy --config worker/wrangler.jsonc --dry-run --outdir .wrangler-dist",
+    "audit": "npm audit --audit-level=low",
     "deploy": "npm run build && cd dist && rm -f *.onnx && cd .. && wrangler pages deploy dist --project-name tinyvoice",
-    "deploy:worker": "cd worker && wrangler deploy"
+    "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -20,7 +30,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.0",
+    "react-router-dom": "^7.18.1",
     "tailwind-merge": "^3.0.0"
   },
   "devDependencies": {
@@ -28,9 +38,13 @@
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.0",
+    "@cloudflare/vitest-pool-workers": "^0.18.5",
+    "@types/node": "^22.20.1",
+    "@vitejs/plugin-react": "^5.2.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "~5.7.0",
-    "vite": "^6.0.0"
+    "typescript": "~5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.111.0"
   }
 }

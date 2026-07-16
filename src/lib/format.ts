@@ -10,5 +10,5 @@ export function qualityLabel(quality: Quality): string {
 }
 
 export function autoDecoderLabel(quality: Quality, detected: boolean): string {
-  return `Auto (${qualityLabel(quality)}${detected ? "" : ", guessed"})`;
+  return `Auto (${qualityLabel(quality)}${detected ? "" : ", legacy fallback"})`;
 }

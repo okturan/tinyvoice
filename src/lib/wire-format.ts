@@ -29,7 +29,15 @@ export function packTokens(
   pk[0] = MAGIC_BYTES[quality];
   const dv = new DataView(pk.buffer);
   for (let i = 0; i < n; i++) {
-    dv.setUint16(1 + i * 2, Number(tokens[i]), true);
+    const token = tokens[i]!;
+    const valid =
+      typeof token === "bigint"
+        ? token >= 0n && token <= 65_535n
+        : Number.isInteger(token) && token >= 0 && token <= 65_535;
+    if (!valid) {
+      throw new RangeError(`Token at index ${i} is not an unsigned 16-bit integer`);
+    }
+    dv.setUint16(1 + i * 2, Number(token), true);
   }
   return pk;
 }

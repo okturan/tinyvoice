@@ -102,6 +102,7 @@ export function ConnectionPanel() {
             spellCheck={false}
             placeholder="room name"
             autoComplete="off"
+            maxLength={128}
             className="flex-1 min-w-0 px-2.5 py-2 bg-transparent border-none text-[var(--text)] font-mono text-[0.8rem] outline-none"
             value={roomInput}
             onChange={(e) => setRoomInput(e.target.value)}

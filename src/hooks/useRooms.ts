@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RELAY_HTTP, type LobbyRoom } from "@/lib/ws/relay";
+import { normalizeRoomName, parseLobbyRooms, RELAY_HTTP, type LobbyRoom } from "@/lib/ws/relay";
 
 const POLL_INTERVAL = 10_000;
 const MAX_RECENT = 6;
@@ -10,7 +10,14 @@ function loadRecent(): string[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter((x) => typeof x === "string");
+    if (Array.isArray(parsed)) {
+      const rooms: string[] = [];
+      for (const value of parsed) {
+        const room = normalizeRoomName(value);
+        if (room && !rooms.includes(room)) rooms.push(room);
+      }
+      return rooms.slice(0, MAX_RECENT);
+    }
     return [];
   } catch {
     return [];
@@ -39,8 +46,11 @@ export function useRooms(): UseRoomsReturn {
   const fetchRooms = useCallback(async () => {
     try {
       const res = await fetch(`${RELAY_HTTP}/rooms`);
-      const data: LobbyRoom[] = await res.json();
-      setActiveRooms(data);
+      if (!res.ok) throw new Error(`Room list returned HTTP ${res.status}`);
+      const data: unknown = await res.json();
+      const rooms = parseLobbyRooms(data);
+      if (!rooms) throw new Error("Room list returned an invalid payload");
+      setActiveRooms(rooms);
     } catch {
       setActiveRooms([]);
     }
@@ -62,8 +72,10 @@ export function useRooms(): UseRoomsReturn {
   }, []);
 
   const addRecentRoom = useCallback((name: string) => {
+    const room = normalizeRoomName(name);
+    if (!room) return;
     setRecentRooms((prev) => {
-      const next = [name, ...prev.filter((x) => x !== name)].slice(
+      const next = [room, ...prev.filter((x) => x !== room)].slice(
         0,
         MAX_RECENT,
       );

@@ -65,6 +65,22 @@ export function istft(
   win: Float32Array
 ): Float32Array {
   const hN = NFFT / 2 + 1;
+  if (mag.length === 0 || mag.length !== ph.length || mag.length % hN !== 0) {
+    throw new RangeError(`Expected matching non-empty spectra with ${hN} bins per frame`);
+  }
+  if (win.length !== WLEN) {
+    throw new RangeError(`Expected a synthesis window of ${WLEN} samples`);
+  }
+  for (let i = 0; i < mag.length; i++) {
+    if (!Number.isFinite(mag[i]) || !Number.isFinite(ph[i])) {
+      throw new RangeError("Spectra must contain only finite values");
+    }
+  }
+  for (let i = 0; i < win.length; i++) {
+    if (!Number.isFinite(win[i])) {
+      throw new RangeError("Synthesis window must contain only finite values");
+    }
+  }
   const T = mag.length / hN;
   const oS = (T - 1) * HOP + WLEN;
   const o = new Float32Array(oS);

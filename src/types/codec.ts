@@ -38,10 +38,10 @@ export interface ModelSessions {
 
 /** Parsed wire-format packet */
 export interface WirePacket {
-  /** Detected quality from magic byte (or guessed from token count) */
+  /** Detected quality from the magic byte, or the 50 Hz legacy fallback */
   quality: Quality;
   /** Raw token bytes (without magic byte header) */
   tokenBytes: Uint8Array;
-  /** Whether the quality was auto-detected from magic byte vs guessed */
+  /** Whether the quality was detected from a magic byte */
   hasMagicByte: boolean;
 }

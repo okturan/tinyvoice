@@ -148,9 +148,9 @@ Default tab is Decode if the URL contains voice data (`?v=`), otherwise Record.
 3 radio options in a segmented control:
 | Option | Label | Description |
 |--------|-------|-------------|
-| 12.5hz | "12.5hz" | "tiny QR · ~144B" |
-| 25hz | "25hz" | "balanced · ~288B" |
-| 50hz | "50hz" | "best quality · ~576B" |
+| 12.5hz | "12.5hz" | "tiny QR · 25 B/s + header" |
+| 25hz | "25hz" | "balanced · 50 B/s + header" |
+| 50hz | "50hz" | "best quality · 100 B/s + header" |
 
 Each option shows a cache indicator:
 - ✓ if that quality's compressor model is cached (should feel "ready")
@@ -236,7 +236,7 @@ Appears after successful file drop, camera scan, or URL parameter decode.
 
 **Progress bar:** visible during decode.
 
-**Status text:** shows packet info (size, token count, estimated duration, detected quality). If quality was guessed (no magic byte header), shows "(guessed)". Updates during decode with progress messages.
+**Status text:** shows packet info (size, token count, estimated duration, detected quality). If a legacy packet has no magic byte, shows the explicit 50 Hz legacy fallback. Updates during decode with progress messages.
 
 ---
 

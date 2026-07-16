@@ -105,14 +105,15 @@ export function CodecProvider({ children }: { children: ReactNode }) {
       if (msg.includes("protobuf")) await clearCache();
       throw e;
     } finally {
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
     }
   }, [loadedQualities, setProgressThrottled]);
 
   const abortLoading = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
     }
     setState("idle");
     setStatusText("Cancelled");

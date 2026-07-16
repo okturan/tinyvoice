@@ -54,6 +54,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
               type="text"
               value={room.username}
               onChange={e => room.setUsername(e.target.value)}
+              maxLength={64}
               placeholder="your name"
               spellCheck={false}
               className="w-full mt-1.5 px-3 py-2 rounded-md bg-[var(--base)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors"
