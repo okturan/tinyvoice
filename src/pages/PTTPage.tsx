@@ -141,7 +141,7 @@ export function PTTPage() {
       stats.setLastSent(packet.length);
       stats.addSent(packet.length);
       addLog(`Encoded ${dt.toFixed(2)}s \u2192 ${(packet.length - 1) / 2} tokens`, "ok");
-      room.sendPacket(packet.buffer);
+      room.sendPacket(Uint8Array.from(packet).buffer);
       addLog(`Sent ${fmt(packet.length)}`, "ok", packet, "sent");
     } catch (e) {
       addLog("Encode: " + (e instanceof Error ? e.message : String(e)), "warn");
@@ -154,7 +154,10 @@ export function PTTPage() {
       ? pttState : isPttReady ? "idle" : "disabled";
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries]);
-  const handleJoin = (name?: string) => { const r = name || roomInput.trim(); if (r) room.joinRoom(r); };
+  const handleJoin = (name?: string) => {
+    const candidate = name || roomInput;
+    if (candidate && !room.joinRoom(candidate)) addLog("Invalid room name", "warn");
+  };
 
   return (
     <>
@@ -185,7 +188,7 @@ export function PTTPage() {
               <div className="p-3 border-b border-[var(--surface0)]">
                 <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">You</div>
                 <input type="text" spellCheck={false} value={room.username} onChange={e => handleUsernameChange(e.target.value)}
-                  placeholder="your name" className="w-full px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
+                  maxLength={64} placeholder="your name" className="w-full px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
                 <div className="mt-1 text-[0.6rem] text-[var(--overlay)]">
                   {savedUsername
                     ? room.isConnected ? `Visible as ${savedUsername}` : `Saved as ${savedUsername}`
@@ -217,7 +220,7 @@ export function PTTPage() {
                   <div>
                     <div className="flex gap-1 mb-2">
                       <input type="text" spellCheck={false} autoComplete="off" placeholder="room name"
-                        value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleJoin()}
+                        maxLength={128} value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleJoin()}
                         className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
                       <button onClick={() => handleJoin()}
                         className="px-2.5 rounded-md bg-[var(--surface0)] text-[var(--overlay)] hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer">

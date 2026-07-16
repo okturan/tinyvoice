@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useRooms } from "@/hooks/useRooms";
+import { normalizeDisplayName, normalizeRoomName } from "@/lib/ws/relay";
 
 interface RoomContextValue {
   currentRoom: string | null;
@@ -18,7 +19,7 @@ interface RoomContextValue {
   isConnected: boolean;
   activeRooms: { name: string; count: number }[];
   recentRooms: string[];
-  joinRoom: (name: string) => void;
+  joinRoom: (name: string) => boolean;
   leaveRoom: () => void;
   sendPacket: (data: ArrayBuffer) => void;
   onPacketReceived: (handler: (data: ArrayBuffer) => void) => () => void;
@@ -35,7 +36,7 @@ export function useRoom(): RoomContextValue {
 }
 
 function loadUsername(): string {
-  return localStorage.getItem("fc-username") || "";
+  return normalizeDisplayName(localStorage.getItem("fc-username")) ?? "";
 }
 
 export function RoomProvider({ children }: { children: ReactNode }) {
@@ -65,16 +66,18 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     });
 
   const setUsername = useCallback((name: string) => {
-    setUsernameState(name);
-    localStorage.setItem("fc-username", name);
-    updateName(name.trim() || "anon");
+    const normalized = normalizeDisplayName(name) ?? "";
+    setUsernameState(normalized);
+    localStorage.setItem("fc-username", normalized);
+    updateName(normalized || "anon");
   }, [updateName]);
 
   const joinRoom = useCallback(
     (name: string) => {
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      connect(trimmed, username || "anon");
+      const room = normalizeRoomName(name);
+      if (!room) return false;
+      connect(room, username || "anon");
+      return true;
     },
     [connect, username],
   );

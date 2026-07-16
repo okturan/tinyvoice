@@ -39,7 +39,7 @@ src/
     useCamera.ts        — Camera stream management
     useTheme.ts         — Theme read/write
   lib/
-    istft.ts            — Cooley-Tukey iFFT + overlap-add (math-critical, verified)
+    istft.ts            — Cooley-Tukey iFFT + overlap-add (math-critical, invariant-tested)
     model-cache.ts      — IndexedDB CRUD for cached models
     model-loader.ts     — Download with progress + AbortController + cache
     wire-format.ts      — Magic byte pack/unpack
@@ -52,12 +52,11 @@ src/
       playback.ts       — AudioContext buffer playback
 
 worker/
-  index.js              — Cloudflare Worker: Room + Lobby Durable Objects
-  wrangler.toml         — Worker config (name: tinyvoice-relay)
+  index.ts              — Cloudflare Worker: Room + Lobby Durable Objects
+  wrangler.jsonc        — Worker config (name: tinyvoice-relay)
+  worker-configuration.d.ts — Wrangler-generated runtime and binding types
 
 public/
-  index.html            — Old vanilla PTT app (legacy, not used by React build)
-  qr.html               — Old vanilla QR app (legacy, not used by React build)
   istft_window.json     — Precomputed Hann window (served as static asset)
   _redirects            — SPA routing for Cloudflare Pages
 ```
@@ -92,13 +91,13 @@ npm run dev             # local dev server
 
 ```bash
 npm run dev              # Vite dev server (frontend)
-cd worker && wrangler dev --port 8787   # Worker dev server
+npx wrangler dev --config worker/wrangler.jsonc --port 8787
+npm test                 # unit + Cloudflare runtime integration tests
 ```
 
 ## Known issues / tech debt
 
 - **PTTPage still has some inline logic** that should move into contexts/hooks.
-- `public/index.html` — old vanilla PTT (not used by React build, could delete)
 - Float16 ONNX models failed ORT validation — only float32 works
 - Encoder ONNX export requires legacy tracer (dynamo=False) due to WavLM attention layer
 - Chunk size warning on build (580KB JS) — motion library is large, could code-split

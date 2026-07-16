@@ -1,133 +1,174 @@
 # TinyVoice
 
-Voice chat over 576 bytes. A push-to-talk app that compresses speech into tiny packets using a neural speech codec running entirely in your browser via WebAssembly. Also generates scannable QR codes from voice messages.
+TinyVoice is a browser-based push-to-talk and voice-QR experiment built around the [FocalCodec](https://github.com/lucadellalib/focalcodec) neural speech codec. Encoding and decoding run in the browser with ONNX Runtime Web; a Cloudflare Worker relays bounded codec packets between public rooms.
 
-**[Live demo](https://focalcodec-walkie.pages.dev)** · **[Voice QR tool](https://focalcodec-walkie.pages.dev/qr.html)**
+[Live React app](https://tinyvoice.pages.dev/) · [Voice QR](https://tinyvoice.pages.dev/qr) · [Relay health](https://tinyvoice-relay.okan.workers.dev/health)
 
-## How it works
+## What it demonstrates
 
-```
-Speaker's browser                          Listener's browser
-┌──────────────────────┐                   ┌──────────────────────┐
-│ Mic → WavLM Encoder  │                   │  Vocos Decoder       │
-│    → Compressor      │  ── 577 bytes ──▸ │    → iSTFT (JS)      │
-│    → Quantizer       │   (WebSocket)     │    → Speaker         │
-└──────────────────────┘                   └──────────────────────┘
-      ONNX Runtime (WASM)                       ONNX Runtime (WASM)
-```
-
-1. **Record** — hold the PTT button, speak
-2. **Encode** — shared WavLM encoder (88.7M params) + quality-specific compressor runs in WASM
-3. **Transmit** — magic byte + token data sent via WebSocket relay
-4. **Decode** — matching decoder + iSTFT (pure JavaScript) reconstructs audio
-5. **Play** — decoded audio plays instantly
-
-All neural network inference happens in the browser. The relay server only forwards raw bytes.
-
-## Pages
-
-| Page | Purpose |
-|------|---------|
-| `/` | PTT rooms — join a room, push-to-talk, hear others |
-| `/qr.html` | Voice QR — record, encode, generate QR code, decode from scan/drop |
-
-## Quality levels
-
-| Config | Rate | Bytes/5s | QR size | Use case |
-|--------|------|----------|---------|----------|
-| 50hz | 50 tok/s | 577 | Large | Best quality (PTT default) |
-| 25hz | 25 tok/s | 289 | Medium | Balanced |
-| 12.5hz | 12.5 tok/s | 145 | Tiny | QR codes, minimal bandwidth |
-
-## Wire format
-
-```
-[1 byte magic] [N × 2 bytes tokens (16-bit LE)]
-
-Magic: 0x01 = 50hz, 0x02 = 25hz, 0x03 = 12.5hz
-```
-
-Legacy links without a magic byte are supported — the decoder guesses quality from token count.
+- Browser-side neural audio inference with a shared WavLM encoder and quality-specific compressor/decoder models
+- A compact, versioned binary wire format with legacy packet support
+- Shareable voice messages encoded into URLs and QR codes
+- Public WebSocket rooms backed by hibernating Cloudflare Durable Objects
+- A Durable Object lobby with canonical room identities and stale-room cleanup
+- React 19, TypeScript, Vite 7, Tailwind CSS 4, and ONNX Runtime Web
+- Runtime-level Worker, WebSocket, hibernation, alarm, parser, and DSP tests
 
 ## Architecture
 
-### Split encoder model
+```text
+Speaker browser                                  Listener browser
+┌────────────────────────┐                       ┌────────────────────────┐
+│ microphone             │                       │ codec packet            │
+│ WavLM encoder          │                       │ quality decoder         │
+│ quality compressor     │── WebSocket relay ──▶│ TypeScript iSTFT       │
+│ 16-bit codec tokens    │                       │ Web Audio playback      │
+└────────────────────────┘                       └────────────────────────┘
+       ONNX Runtime Web                                 ONNX Runtime Web
 
-The WavLM encoder (88.7M params, 595MB) is **shared** across all quality levels. Only the compressor and decoder differ per quality (~70-76MB + ~135-141MB each). This means:
-
-- First quality download: ~800MB (encoder + one comp/dec pair)
-- Each additional quality: ~210MB
-- All three: ~1.2GB total
-
-Models are cached in **IndexedDB** — subsequent visits load from local storage in 1-2 seconds.
-
-### Files
-
+                       Cloudflare Worker
+                  ┌────────────────────────┐
+                  │ Room Durable Objects   │
+                  │ Lobby Durable Object  │
+                  └────────────────────────┘
 ```
-public/
-├── index.html         Main PTT app (rooms, WebSocket, encode/decode)
-├── qr.html            Voice QR tool (record → QR, scan → decode)
-├── app.css            Layout and components
-├── themes.css         6 color themes
-├── shared.js          IndexedDB cache, iSTFT, utilities
-└── istft_window.json  Precomputed window for iSTFT synthesis
+
+The browser downloads the model artifacts, performs inference, and reconstructs audio. The relay does not run the models and does not decode audio. It handles WebSocket upgrades, bounded display-name control messages, user-list broadcasts, room counts, and binary packet forwarding.
+
+## Routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Push-to-talk rooms |
+| `/qr` | Record, generate, scan, upload, and decode voice QR messages |
+| `/qr.html` | Compatibility redirect to the React QR route |
+| Relay `/health` | Health response |
+| Relay `/rooms` | Active public-room list |
+| Relay `/ws/:room` | WebSocket room upgrade |
+
+## Wire format
+
+```text
+[1-byte magic] [N × unsigned 16-bit little-endian tokens]
+
+0x01 = 50 Hz
+0x02 = 25 Hz
+0x03 = 12.5 Hz
+```
+
+The exact packet size is `1 + 2N` bytes, including the magic byte. Packet length therefore depends on the number of codec tokens, which depends on recording duration and token rate. Concrete examples are:
+
+| Tokens | Exact packet bytes |
+| ---: | ---: |
+| 288 | 577 |
+| 144 | 289 |
+| 72 | 145 |
+
+These are token-count examples, not fixed sizes for five seconds of audio. At the nominal rates, the payload grows by approximately 100 bytes/s at 50 Hz, 50 bytes/s at 25 Hz, or 25 bytes/s at 12.5 Hz, plus one header byte per packet.
+
+Headerless legacy packets are accepted when they contain a non-empty, even number of bytes. Because duration is variable and quality cannot be inferred reliably from token count, legacy packets use an explicit 50 Hz fallback; they are not described as auto-detected.
+
+The relay accepts codec-shaped binary packets up to 64 KiB. Oversized or malformed packets close the sending connection instead of reaching peers.
+
+## Models and browser storage
+
+Models come from [skymorphosis/focalcodec-onnx](https://huggingface.co/skymorphosis/focalcodec-onnx/tree/a683dc2f143f129c30becb04ffef95cbd52f9eb7) at the immutable revision `a683dc2f143f129c30becb04ffef95cbd52f9eb7`. Downloads are restricted to safe `.onnx` filenames and must match the pinned artifact manifest's exact byte size; truncated, oversized, or mismatched responses are rejected. IndexedDB cache keys include that revision, and the cache schema upgrade clears artifacts stored before the pin.
+
+The size figures below are estimates used by the UI:
+
+| Pipeline | Shared encoder | Compressor | Decoder | Approximate first download |
+| --- | ---: | ---: | ---: | ---: |
+| 50 Hz | 595 MB | 70 MB | 135 MB | 800 MB |
+| 25 Hz | 595 MB | 74 MB | 139 MB | 808 MB |
+| 12.5 Hz | 595 MB | 76 MB | 141 MB | 812 MB |
+
+Downloading all three quality pipelines is approximately 1,230 MB by those estimates because the 595 MB encoder is shared. Successful model downloads are cached in IndexedDB on a best-effort basis. Browser storage quotas, private browsing, eviction, or manual clearing can require another download; no fixed cached-load time is promised.
+
+## Public-room and storage boundaries
+
+TinyVoice is an open demonstration, not a private communications product:
+
+- There is no account system, room password, authorization layer, or end-to-end encryption.
+- Anyone who knows a valid room identifier can connect, and `/rooms` intentionally lists active room names and connection counts.
+- Display names are peer-provided labels, not verified identities.
+- Room WebSockets are ephemeral. The lobby persists room counts and timestamps in Durable Object storage so stale entries can be cleaned up; the project therefore does not claim that the relay stores nothing.
+- Room identifiers are normalized, bounded, and canonicalized. Display names and their control frames are normalized and bounded. Each room is limited to 64 connections.
+- Binary relay payloads are codec-shape checked and limited to 64 KiB, but there is no per-user rate limit.
+
+Do not use the public demo for confidential or safety-critical audio.
+
+## Repository map
+
+```text
+src/
+├── pages/                 React routes for PTT and QR workflows
+├── components/            Room, codec, QR, theme, and UI components
+├── contexts/              Codec, room, stats, and theme state
+├── hooks/                 Recording, playback, rooms, WebSocket, and camera hooks
+├── lib/
+│   ├── codec-service.ts   ONNX session orchestration and encode/decode pipeline
+│   ├── model-loader.ts    Bounded streaming downloads and IndexedDB integration
+│   ├── wire-format.ts     Packet packing, parsing, and token conversion
+│   ├── qrParsing.ts       Voice URL/raw-base64 validation
+│   └── istft.ts           Inverse FFT and overlap-add reconstruction
+└── types/                 Codec and ONNX types
 
 worker/
-├── index.js           Cloudflare Worker (Room + Lobby Durable Objects)
-└── wrangler.toml      Worker config and DO migrations
+├── index.ts               Worker plus Room and Lobby Durable Objects
+├── wrangler.jsonc         Bindings, migrations, compatibility, and observability
+├── tsconfig.json          Strict Worker type-check configuration
+└── worker-configuration.d.ts
+                           Wrangler-generated runtime and binding types
+
+tests/                     Unit and Cloudflare runtime integration tests
+.github/workflows/ci.yml   Least-privilege validation workflow
 ```
 
-### Services
+## Local development
 
-| Service | URL |
-|---------|-----|
-| Frontend | Cloudflare Pages |
-| Relay | Cloudflare Workers (Durable Objects) |
-| Models | HuggingFace ([skymorphosis/focalcodec-onnx](https://huggingface.co/skymorphosis/focalcodec-onnx)) |
-
-### Themes
-
-6 built-in themes: Catppuccin Mocha, Nord, Rose Pine, Solarized Dark, Midnight, Catppuccin Latte. Persisted in localStorage.
-
-## Development
+Requirements: Node.js 22.12 or newer and npm 11.17.0.
 
 ```bash
-# Frontend
-cd public && python3 -m http.server 8787
-
-# Worker (local)
-cd worker && wrangler dev --port 8788
-
-# Deploy frontend
-wrangler pages deploy public --project-name focalcodec-walkie
-
-# Deploy worker
-cd worker && wrangler deploy
+npm ci --ignore-scripts
+npm run dev
 ```
 
-### ONNX model export
+Run the relay in a second terminal:
 
-Models exported from [FocalCodec](https://github.com/lucadellalib/focalcodec):
+```bash
+npx wrangler dev --config worker/wrangler.jsonc --port 8787
+```
 
-- **Encoder**: legacy tracer (`dynamo=False`, opset 14) due to WavLM attention incompatibility with FX exporter
-- **Compressors**: standard dynamo export (opset 18)
-- **Decoders**: exported without iSTFT layer — iSTFT is implemented in JavaScript (Cooley-Tukey radix-2 inverse FFT + overlap-add)
+The frontend automatically uses the local relay when its hostname is `localhost`.
 
-## Origin
+## Validation
 
-Built as an experiment to test voice messaging over [LoRa mesh networks](https://meshtastic.org/) (Meshtastic on LILYGO T-Echo). LoRa packets max out at 237 bytes with strict duty cycle limits — FocalCodec makes voice-over-LoRa feasible at 145-577 bytes per message.
+```bash
+npm run audit
+npm test
+npm run typecheck
+npm run build
+npm run worker:types:check
+npm run worker:dry-run
+git diff --check
+```
 
-### Regulatory note (Turkey)
+`npm test` runs both pure unit tests and integration tests inside Cloudflare's current Workers test runtime. Coverage includes wire/QR parsing, strict server-message validation, iSTFT invariants, model URL/download edge cases, Worker HTTP routing, Durable Object storage and alarms, byte-exact WebSocket relay behavior, connection cleanup, Unicode room canonicalization, and hibernation recovery.
 
-BTK Tablo 1 Row 21: 869.4–869.65 MHz, 500 mW ERP, 10% duty cycle. At SHORT_FAST preset, 3 LoRa packets transmit in ~4.5 seconds.
+## Deployment commands
 
-## Credits
+```bash
+npm run deploy          # build and deploy the Pages project
+npm run deploy:worker   # deploy the Worker
+```
 
-- **[FocalCodec](https://github.com/lucadellalib/focalcodec)** — Luca Della Libera (Apache 2.0)
-- **[ONNX Runtime Web](https://github.com/microsoft/onnxruntime)** — Microsoft
-- **[Cloudflare Workers](https://workers.cloudflare.com/)** — WebSocket relay
-- **[Meshtastic](https://meshtastic.org/)** — LoRa mesh inspiration
+Deployment is intentionally separate from CI. Pull requests validate configuration and produce a Worker dry-run bundle but do not deploy or create a release.
 
-## License
+## Credits and provenance
 
-MIT
+- [FocalCodec](https://github.com/lucadellalib/focalcodec) by Luca Della Libera
+- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime), loaded from an exact version with Subresource Integrity
+- [Cloudflare Workers and Durable Objects](https://developers.cloudflare.com/durable-objects/)
+- [Meshtastic](https://meshtastic.org/) as the low-bandwidth experimentation inspiration
+
+This repository currently has no project-level `LICENSE` file. Dependency, upstream model, and upstream project licenses remain separate; inspect them before redistribution or commercial use.

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   RELAY_WS,
   parseServerMessage,
+  shouldReconnect,
   type HelloMessage,
 } from "@/lib/ws/relay";
 
@@ -29,6 +30,7 @@ export function useWebSocket(callbacks: {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(INITIAL_RECONNECT_DELAY);
+  const reconnectAttempts = useRef(0);
   const intentionalClose = useRef(false);
   const currentRoom = useRef<string | null>(null);
   const currentUsername = useRef<string>("");
@@ -56,8 +58,9 @@ export function useWebSocket(callbacks: {
   }, []);
 
   const connect = useCallback(
-    (room: string, username: string) => {
+    (room: string, username: string, isRetry = false) => {
       cleanup();
+      if (!isRetry) reconnectAttempts.current = 0;
       intentionalClose.current = false;
       currentRoom.current = room;
       currentUsername.current = username;
@@ -69,6 +72,7 @@ export function useWebSocket(callbacks: {
       ws.onopen = () => {
         setIsConnected(true);
         reconnectDelay.current = INITIAL_RECONNECT_DELAY;
+        reconnectAttempts.current = 0;
         const hello: HelloMessage = { type: "hello", name: username };
         ws.send(JSON.stringify(hello));
         callbacksRef.current.onConnected?.(room);
@@ -87,23 +91,29 @@ export function useWebSocket(callbacks: {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (wsRef.current === ws) wsRef.current = null;
         setIsConnected(false);
         setUsers([]);
 
         if (
           !intentionalClose.current &&
           currentRoom.current &&
-          currentUsername.current
+          currentUsername.current &&
+          shouldReconnect(event.code, reconnectAttempts.current)
         ) {
+          reconnectAttempts.current += 1;
           const delay = reconnectDelay.current;
           reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY);
           const savedRoom = currentRoom.current;
           const savedUsername = currentUsername.current;
           reconnectTimer.current = setTimeout(() => {
-            connect(savedRoom, savedUsername);
+            reconnectTimer.current = null;
+            connect(savedRoom, savedUsername, true);
           }, delay);
         } else {
+          currentRoom.current = null;
+          currentUsername.current = "";
           callbacksRef.current.onDisconnected?.();
         }
       };

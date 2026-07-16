@@ -35,6 +35,7 @@ export function RoomInput({ onJoin }: RoomInputProps) {
           placeholder="room name"
           spellCheck={false}
           autoComplete="off"
+          maxLength={128}
           className="border-0 font-mono focus-visible:ring-0"
         />
         <Button

@@ -2,6 +2,9 @@
 *.onnx.data
 node_modules/
 dist/
+*.tsbuildinfo
+worker/.wrangler-dist/
+.wrangler-dist/
 **/.wrangler/
 .dev.vars
 .DS_Store

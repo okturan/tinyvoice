@@ -26,7 +26,7 @@ const MODEL_GROUPS: ModelGroup[] = [
   },
   {
     label: "50hz — best quality",
-    explanation: "Highest fidelity. Larger packets (~576 B per second).",
+    explanation: "Highest fidelity. 100 payload bytes/s plus one packet header byte.",
     models: [
       { name: "compressor_50hz.onnx", size: 70, desc: "Compressor" },
       { name: "decoder_50hz.onnx", size: 135, desc: "Decoder" },
@@ -34,7 +34,7 @@ const MODEL_GROUPS: ModelGroup[] = [
   },
   {
     label: "25hz — balanced",
-    explanation: "Good quality at half the size (~288 B/s). Default for QR.",
+    explanation: "Good quality at half the size: 50 payload bytes/s plus one header byte.",
     models: [
       { name: "compressor_25hz.onnx", size: 74, desc: "Compressor" },
       { name: "decoder_25hz.onnx", size: 139, desc: "Decoder" },
@@ -42,7 +42,7 @@ const MODEL_GROUPS: ModelGroup[] = [
   },
   {
     label: "12.5hz — smallest",
-    explanation: "Fits in a QR code (~144 B/s). Lower quality.",
+    explanation: "QR default. 25 payload bytes/s plus one packet header byte.",
     models: [
       { name: "compressor_12_5hz.onnx", size: 76, desc: "Compressor" },
       { name: "decoder_12_5hz.onnx", size: 141, desc: "Decoder" },
