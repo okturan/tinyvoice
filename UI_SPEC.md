@@ -62,15 +62,18 @@ Two-pane layout: fixed-width sidebar (left) + main content area (right), inside 
 #### Room
 **Disconnected state:**
 - Text input for room name + join button (arrow icon) + random name button (shuffle icon)
-- List of rooms below: either active rooms (fetched from server, showing active indicator + user count) or suggested fallback rooms (static list, inactive indicators)
+- List of rooms below: either active rooms (fetched from server, showing active indicator, user count, and the room's locked quality) or suggested fallback rooms (static list, inactive indicators)
 - Clicking any room joins it
 
 **Connected state:**
-- Beacon animation (pulsing dot with expanding ring, conveying "connected") + room name + online count
+- Beacon animation (pulsing dot with expanding ring, conveying "connected") + room name + the room's locked quality as an accent chip + online count
 - User tags: small pills showing each connected username
 - Leave button
 
+**Room quality lock:** a room's codec quality is set by its first participant (announced at join, or locked by the first packet's magic byte) and cleared when the room empties. The relay rejects packets that don't match; joiners adopt the room's quality automatically, downloading models with visible progress if needed. While in a locked room, other qualities are disabled in the codec section with a "Quality locked by room" note.
+
 #### Codec
+- Quality selector: three chips (12.5hz | 25hz | 50hz). The active quality is highlighted; unloaded qualities show a download marker and clicking one downloads then activates it. Disabled (except the room's own) while a room lock applies.
 - Status indicator (visually distinct ready vs not-loaded states) + status text
 - Progress bar (visible only during download/initialization)
 - Main action button with 4 label states:
@@ -112,8 +115,13 @@ While received audio is playing, show the packet as dense wrapped rows of two-ch
 
 Values show formatted sizes ("256 B", "1.2 KB") or times ("0.42s"). Placeholder "—" should be visually dimmed vs active values. Sent and received stats should be visually distinguishable from each other.
 
-#### Activity Log
-Scrollable monospace log below the stats. Entries appear with a subtle slide-up animation.
+#### Voice Message List
+The main conversation surface below the stats: a chat-style list of this session's voice messages, newest at the bottom with auto-scroll. Sent messages align right, received left. Each bubble shows sender (You / their name — relayed packets carry the sender's name), time, duration, byte size, quality label, a play/stop button, and a "hex" toggle that expands the raw dump inline. Any message can be replayed, including your own; the playing bubble is visually distinct and drives the shared hex stream. Received messages still auto-play on arrival. Session-scoped only: the relay keeps no history, the list caps at 100 messages and clears when leaving or switching rooms.
+
+**Empty state:** centered mic icon (dimmed) + "Voice messages appear here".
+
+#### Diagnostics (demoted activity log)
+A collapsed strip below the message list: "▸ Diagnostics · N". Expanding reveals the scrollable monospace activity log.
 
 **Entry types** (each needs a visually distinct treatment):
 - **ok** — successful operations
@@ -124,8 +132,6 @@ Scrollable monospace log below the stats. Entries appear with a subtle slide-up 
 - **name** — identity events (should stand out)
 
 Some entries include expandable hex dumps (click to toggle). Hex bytes should be color-coded by direction (sent vs received).
-
-**Empty state:** centered mic icon (dimmed) + "Join a room & load models to start" + "Activity will appear here" subtitle.
 
 Max 200 entries retained, auto-scrolls to bottom on new entries.
 
@@ -158,7 +164,7 @@ Default tab is Decode if the URL contains voice data (`?v=`), otherwise Record.
 
 Stage Swap: the record stage shows quality, codec, and the HOLD button; encoding swaps the canvas to the result stage, headed by "← New recording" plus a quality/duration/bytes summary chip. Split Deck: quality, codec, and a smaller HOLD button stack in the rail; the result pane shows the QR card, or a dashed placeholder before the first take.
 
-A visible **"Trim lead-in silence"** toggle sits by the record button (persisted, default on). When on, dead silence before speech is cut ahead of encoding, keeping a ~120ms pre-roll. Encode success must not leave a status line behind in the codec card — the result view itself is the feedback.
+A visible **"Trim lead-in silence"** toggle sits by the record button (persisted, default on). When on, dead silence before speech is cut ahead of encoding. The gate is noise-floor adaptive — the threshold scales off the recording's own quietest windows, so "silentish" room tone counts as silence — and keeps a ~100ms pre-roll. Encode success must not leave a status line behind in the codec card — the result view itself is the feedback.
 
 #### Quality Picker
 3 radio options in a segmented control:
@@ -271,7 +277,9 @@ While audio is playing, show the shared approximate hex stream using the origina
 
 ## Settings Panel (Shared)
 
-Slides in from the right edge. Used on both PTT and QR pages.
+Slides in from the right edge. Used on both PTT and QR pages — the same panel everywhere.
+
+Sections are organized into three tabs so the panel never becomes a long scroll: **General** (Username, Layout, Theme), **Audio** (Microphone), **Models** (Codec Status, Model Management).
 
 ### Sections
 

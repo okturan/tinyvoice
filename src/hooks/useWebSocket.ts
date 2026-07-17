@@ -3,7 +3,10 @@ import {
   RELAY_WS,
   parseServerMessage,
   shouldReconnect,
+  unwrapRelayPayload,
   type HelloMessage,
+  type RelayErrorMessage,
+  type RelayQuality,
 } from "@/lib/ws/relay";
 
 const MAX_RECONNECT_DELAY = 16_000;
@@ -11,21 +14,25 @@ const INITIAL_RECONNECT_DELAY = 1_000;
 
 export interface UseWebSocketReturn {
   isConnected: boolean;
-  connect: (room: string, username: string) => void;
+  connect: (room: string, username: string, quality?: RelayQuality | null) => void;
   updateName: (username: string) => void;
   disconnect: () => void;
   send: (data: ArrayBuffer) => void;
   users: string[];
   userCount: number;
+  /** The quality the room is locked to, or null while unlocked/unknown */
+  roomQuality: RelayQuality | null;
 }
 
 export function useWebSocket(callbacks: {
-  onBinaryMessage?: (data: ArrayBuffer) => void;
+  onBinaryMessage?: (data: ArrayBuffer, sender: string | null) => void;
+  onRelayError?: (message: RelayErrorMessage) => void;
   onConnected?: (room: string) => void;
   onDisconnected?: () => void;
 }): UseWebSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [users, setUsers] = useState<string[]>([]);
+  const [roomQuality, setRoomQuality] = useState<RelayQuality | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,13 +64,16 @@ export function useWebSocket(callbacks: {
     }
   }, []);
 
+  const currentQuality = useRef<RelayQuality | null>(null);
+
   const connect = useCallback(
-    (room: string, username: string, isRetry = false) => {
+    (room: string, username: string, quality: RelayQuality | null = null, isRetry = false) => {
       cleanup();
       if (!isRetry) reconnectAttempts.current = 0;
       intentionalClose.current = false;
       currentRoom.current = room;
       currentUsername.current = username;
+      currentQuality.current = quality;
 
       const ws = new WebSocket(RELAY_WS + encodeURIComponent(room));
       ws.binaryType = "arraybuffer";
@@ -73,7 +83,11 @@ export function useWebSocket(callbacks: {
         setIsConnected(true);
         reconnectDelay.current = INITIAL_RECONNECT_DELAY;
         reconnectAttempts.current = 0;
-        const hello: HelloMessage = { type: "hello", name: username };
+        const hello: HelloMessage = {
+          type: "hello",
+          name: username,
+          ...(quality ? { quality } : {}),
+        };
         ws.send(JSON.stringify(hello));
         callbacksRef.current.onConnected?.(room);
       };
@@ -83,11 +97,16 @@ export function useWebSocket(callbacks: {
           const msg = parseServerMessage(e.data);
           if (msg?.type === "users") {
             setUsers(msg.names);
+          } else if (msg?.type === "room") {
+            setRoomQuality(msg.quality);
+          } else if (msg?.type === "error") {
+            callbacksRef.current.onRelayError?.(msg);
           }
           return;
         }
         if (e.data instanceof ArrayBuffer) {
-          callbacksRef.current.onBinaryMessage?.(e.data);
+          const { sender, packet } = unwrapRelayPayload(e.data);
+          callbacksRef.current.onBinaryMessage?.(packet, sender);
         }
       };
 
@@ -95,6 +114,7 @@ export function useWebSocket(callbacks: {
         if (wsRef.current === ws) wsRef.current = null;
         setIsConnected(false);
         setUsers([]);
+        setRoomQuality(null);
 
         if (
           !intentionalClose.current &&
@@ -107,9 +127,10 @@ export function useWebSocket(callbacks: {
           reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY);
           const savedRoom = currentRoom.current;
           const savedUsername = currentUsername.current;
+          const savedQuality = currentQuality.current;
           reconnectTimer.current = setTimeout(() => {
             reconnectTimer.current = null;
-            connect(savedRoom, savedUsername, true);
+            connect(savedRoom, savedUsername, savedQuality, true);
           }, delay);
         } else {
           currentRoom.current = null;
@@ -129,9 +150,11 @@ export function useWebSocket(callbacks: {
     intentionalClose.current = true;
     currentRoom.current = null;
     currentUsername.current = "";
+    currentQuality.current = null;
     cleanup();
     setIsConnected(false);
     setUsers([]);
+    setRoomQuality(null);
     callbacksRef.current.onDisconnected?.();
   }, [cleanup]);
 
@@ -139,7 +162,11 @@ export function useWebSocket(callbacks: {
     currentUsername.current = username;
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      const hello: HelloMessage = { type: "hello", name: username };
+      const hello: HelloMessage = {
+        type: "hello",
+        name: username,
+        ...(currentQuality.current ? { quality: currentQuality.current } : {}),
+      };
       ws.send(JSON.stringify(hello));
     }
   }, []);
@@ -159,5 +186,6 @@ export function useWebSocket(callbacks: {
     send,
     users,
     userCount: users.length,
+    roomQuality,
   };
 }

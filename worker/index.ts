@@ -9,15 +9,39 @@ const MAX_ROOM_CONNECTIONS = 64;
 const MAX_CONTROL_MESSAGE_CODE_UNITS = 1024;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
 
+type RoomQuality = "50hz" | "25hz" | "12_5hz";
+
+const VALID_QUALITIES = new Set<string>(["50hz", "25hz", "12_5hz"]);
+const QUALITY_BY_MAGIC: Record<number, RoomQuality> = { 1: "50hz", 2: "25hz", 3: "12_5hz" };
+/** Server→client relayed packets are wrapped: [0xFE][nameLen][name utf8][packet] */
+const RELAY_WRAP_MARKER = 0xfe;
+
 interface StoredRoom {
   count: number;
   lastUpdated: number;
+  quality?: RoomQuality;
 }
 
 type StoredRooms = Record<string, StoredRoom>;
 
 interface SessionAttachment {
   name: string;
+}
+
+function normalizeQuality(input: unknown): RoomQuality | null {
+  return typeof input === "string" && VALID_QUALITIES.has(input)
+    ? (input as RoomQuality)
+    : null;
+}
+
+/** The quality a packet claims via its magic byte, or null for legacy headerless packets. */
+function packetQuality(payload: ArrayBuffer): RoomQuality | null {
+  const bytes = new Uint8Array(payload);
+  if (bytes.byteLength >= 3 && bytes.byteLength % 2 === 1) {
+    const magic = bytes[0];
+    return magic === undefined ? null : QUALITY_BY_MAGIC[magic] ?? null;
+  }
+  return null;
 }
 
 function codePointLength(value: string): number {
@@ -66,7 +90,8 @@ function isStoredRoom(value: unknown): value is StoredRoom {
     candidate.count! >= 0 &&
     candidate.count! <= MAX_ROOM_CONNECTIONS &&
     typeof candidate.lastUpdated === "number" &&
-    Number.isFinite(candidate.lastUpdated)
+    Number.isFinite(candidate.lastUpdated) &&
+    (candidate.quality === undefined || normalizeQuality(candidate.quality) !== null)
   );
 }
 
@@ -126,10 +151,16 @@ export class Lobby extends DurableObject<Env> {
     }
   }
 
-  private async setRoomCount(room: string, count: number): Promise<void> {
+  private async setRoomCount(
+    room: string,
+    count: number,
+    quality?: RoomQuality | null,
+  ): Promise<void> {
     const rooms = await this.getRooms();
     if (count > 0) {
-      rooms[room] = { count, lastUpdated: Date.now() };
+      // `undefined` quality preserves whatever is stored; null clears it.
+      const resolved = quality === undefined ? rooms[room]?.quality : quality ?? undefined;
+      rooms[room] = { count, lastUpdated: Date.now(), ...(resolved ? { quality: resolved } : {}) };
     } else {
       delete rooms[room];
     }
@@ -176,7 +207,11 @@ export class Lobby extends DurableObject<Env> {
       const current = rooms[room];
       if (!isStoredRoom(current) || current.lastUpdated !== observedLastUpdated) return;
       if (count > 0) {
-        rooms[room] = { count, lastUpdated: now } satisfies StoredRoom;
+        rooms[room] = {
+          count,
+          lastUpdated: now,
+          ...(current.quality ? { quality: current.quality } : {}),
+        } satisfies StoredRoom;
       } else {
         delete rooms[room];
       }
@@ -227,14 +262,18 @@ export class Lobby extends DurableObject<Env> {
         ) {
           return errorResponse(`invalid payload: need { room, ${countKey}: non-negative integer }`, 400);
         }
-        await this.setRoomCount(room, count as number);
+        // Reconciliation doesn't carry quality; preserve what's stored.
+        const quality = "quality" in candidate && url.pathname === "/update"
+          ? normalizeQuality(candidate.quality)
+          : undefined;
+        await this.setRoomCount(room, count as number, quality);
         return Response.json({ ok: true });
       }
 
       if (request.method === "GET" && url.pathname === "/list") {
         const rooms = await this.getRooms();
         const list = Object.entries(rooms)
-          .map(([name, data]) => ({ name, count: data.count }))
+          .map(([name, data]) => ({ name, count: data.count, quality: data.quality ?? null }))
           .sort((left, right) => left.name.localeCompare(right.name));
         return Response.json(list);
       }
@@ -252,10 +291,56 @@ export class Lobby extends DurableObject<Env> {
 }
 
 export class Room extends DurableObject<Env> {
+  /** Cached room quality; undefined = not yet read from storage (hibernation-safe). */
+  private cachedQuality: RoomQuality | null | undefined;
+
   private openSockets(exclude?: WebSocket): WebSocket[] {
     return this.ctx
       .getWebSockets()
       .filter((socket) => socket !== exclude && socket.readyState === WebSocket.OPEN);
+  }
+
+  private async getQuality(): Promise<RoomQuality | null> {
+    if (this.cachedQuality === undefined) {
+      this.cachedQuality = normalizeQuality(await this.ctx.storage.get("quality"));
+    }
+    return this.cachedQuality;
+  }
+
+  private async setQuality(quality: RoomQuality | null): Promise<void> {
+    const current = await this.getQuality();
+    if (current === quality) return;
+    this.cachedQuality = quality;
+    if (quality) await this.ctx.storage.put("quality", quality);
+    else await this.ctx.storage.delete("quality");
+    this.broadcastRoomInfo();
+    await this.notifyLobby(this.openSockets().length);
+  }
+
+  private roomInfoMessage(quality: RoomQuality | null): string {
+    return JSON.stringify({ type: "room", quality });
+  }
+
+  private broadcastRoomInfo(): void {
+    const message = this.roomInfoMessage(this.cachedQuality ?? null);
+    for (const socket of this.openSockets()) {
+      try {
+        socket.send(message);
+      } catch {
+        // The close/error handler reconciles the lobby count.
+      }
+    }
+  }
+
+  /** Relayed packets carry the sender's name so clients can attribute messages. */
+  private wrapPayload(sender: WebSocket, payload: ArrayBuffer): ArrayBuffer {
+    const nameBytes = new TextEncoder().encode(this.attachment(sender).name);
+    const out = new Uint8Array(2 + nameBytes.length + payload.byteLength);
+    out[0] = RELAY_WRAP_MARKER;
+    out[1] = nameBytes.length;
+    out.set(nameBytes, 2);
+    out.set(new Uint8Array(payload), 2 + nameBytes.length);
+    return out.buffer;
   }
 
   private attachment(socket: WebSocket): SessionAttachment {
@@ -295,10 +380,11 @@ export class Room extends DurableObject<Env> {
     const room = normalizeRoomName(this.ctx.id.name);
     if (!room) return;
     try {
+      const quality = await this.getQuality();
       const response = await this.env.LOBBY.getByName("main").fetch("http://internal/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room, count }),
+        body: JSON.stringify({ room, count, quality }),
       });
       if (!response.ok) {
         throw new Error(`Lobby returned HTTP ${response.status}`);
@@ -333,6 +419,11 @@ export class Room extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ name: "anon" } satisfies SessionAttachment);
 
+    try {
+      server.send(this.roomInfoMessage(await this.getQuality()));
+    } catch {
+      // The close/error handler reconciles the lobby count.
+    }
     this.broadcastUsers();
     await this.notifyLobby(this.openSockets().length);
     return new Response(null, { status: 101, webSocket: client });
@@ -349,10 +440,17 @@ export class Room extends DurableObject<Env> {
         if (typeof parsed !== "object" || parsed === null || (parsed as { type?: unknown }).type !== "hello") {
           return;
         }
-        const name = normalizeDisplayName((parsed as { name?: unknown }).name);
+        const hello = parsed as { name?: unknown; quality?: unknown };
+        const name = normalizeDisplayName(hello.name);
         if (!name) return;
         socket.serializeAttachment({ name } satisfies SessionAttachment);
         this.broadcastUsers();
+
+        // First arrival with a quality locks the room to it.
+        const offered = normalizeQuality(hello.quality);
+        if (offered && (await this.getQuality()) === null) {
+          await this.setQuality(offered);
+        }
       } catch {
         // Text frames are control messages only; malformed JSON is ignored.
       }
@@ -367,12 +465,31 @@ export class Room extends DurableObject<Env> {
       socket.close(1003, "invalid codec packet");
       return;
     }
-    this.broadcastPayload(socket, message);
+
+    const claimed = packetQuality(message);
+    let roomQuality = await this.getQuality();
+    if (roomQuality === null && claimed) {
+      // Fallback lock for clients that never announced a quality.
+      await this.setQuality(claimed);
+      roomQuality = claimed;
+    }
+    if (roomQuality !== null && claimed !== roomQuality) {
+      try {
+        socket.send(JSON.stringify({ type: "error", code: "quality-mismatch", quality: roomQuality }));
+      } catch {
+        // The close/error handler reconciles the lobby count.
+      }
+      return;
+    }
+
+    this.broadcastPayload(socket, this.wrapPayload(socket, message));
   }
 
   async webSocketClose(socket: WebSocket): Promise<void> {
     this.broadcastUsers(socket);
-    await this.notifyLobby(this.openSockets(socket).length);
+    const remaining = this.openSockets(socket).length;
+    if (remaining === 0) await this.setQuality(null);
+    await this.notifyLobby(remaining);
   }
 
   async webSocketError(socket: WebSocket, error: unknown): Promise<void> {
@@ -382,7 +499,9 @@ export class Room extends DurableObject<Env> {
       error: error instanceof Error ? error.message : String(error),
     }));
     this.broadcastUsers(socket);
-    await this.notifyLobby(this.openSockets(socket).length);
+    const remaining = this.openSockets(socket).length;
+    if (remaining === 0) await this.setQuality(null);
+    await this.notifyLobby(remaining);
   }
 }
 

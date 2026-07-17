@@ -13,19 +13,40 @@ interface UsersPayload {
   names: string[];
 }
 
+interface RoomPayload {
+  type: "room";
+  quality: string | null;
+}
+
+interface ErrorPayload {
+  type: "error";
+  code: string;
+  quality?: string | null;
+}
+
+interface LobbyRoomPayload {
+  name: string;
+  count: number;
+  quality: string | null;
+}
+
 async function workerFetch(path: string, init?: RequestInit): Promise<Response> {
   return workerExports.default.fetch(new Request(`https://relay.test${path}`, init));
 }
 
-function nextMessage(socket: WebSocket): Promise<MessageEvent> {
+/** Waits for the next control message of the given type, skipping others. */
+function nextControl<T extends { type: string }>(socket: WebSocket, type: T["type"]): Promise<T> {
   return new Promise((resolve, reject) => {
     const onMessage = (event: MessageEvent) => {
+      if (typeof event.data !== "string") return;
+      const parsed = JSON.parse(event.data) as { type?: string };
+      if (parsed.type !== type) return;
       cleanup();
-      resolve(event);
+      resolve(parsed as T);
     };
     const onClose = (event: CloseEvent) => {
       cleanup();
-      reject(new Error(`socket closed before message (${event.code})`));
+      reject(new Error(`socket closed before "${type}" message (${event.code})`));
     };
     const cleanup = () => {
       socket.removeEventListener("message", onMessage);
@@ -36,10 +57,28 @@ function nextMessage(socket: WebSocket): Promise<MessageEvent> {
   });
 }
 
-async function nextUsers(socket: WebSocket): Promise<UsersPayload> {
-  const event = await nextMessage(socket);
-  expect(typeof event.data).toBe("string");
-  return JSON.parse(event.data as string) as UsersPayload;
+const nextUsers = (socket: WebSocket) => nextControl<UsersPayload>(socket, "users");
+const nextRoom = (socket: WebSocket) => nextControl<RoomPayload>(socket, "room");
+const nextError = (socket: WebSocket) => nextControl<ErrorPayload>(socket, "error");
+
+function nextBinary(socket: WebSocket): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (event: MessageEvent) => {
+      if (!(event.data instanceof ArrayBuffer)) return;
+      cleanup();
+      resolve(event.data);
+    };
+    const onClose = (event: CloseEvent) => {
+      cleanup();
+      reject(new Error(`socket closed before binary message (${event.code})`));
+    };
+    const cleanup = () => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+    };
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+  });
 }
 
 function nextClose(socket: WebSocket): Promise<CloseEvent> {
@@ -48,7 +87,20 @@ function nextClose(socket: WebSocket): Promise<CloseEvent> {
   });
 }
 
-async function openSocket(room: string): Promise<{ socket: WebSocket; initial: UsersPayload }> {
+/** Mirrors the relay's [0xFE][nameLen][name][packet] server→client wrap. */
+function unwrap(data: ArrayBuffer): { sender: string; packet: Uint8Array } {
+  const bytes = new Uint8Array(data);
+  expect(bytes[0]).toBe(0xfe);
+  const nameLength = bytes[1];
+  const sender = new TextDecoder().decode(bytes.subarray(2, 2 + nameLength));
+  return { sender, packet: bytes.subarray(2 + nameLength) };
+}
+
+async function openSocket(room: string): Promise<{
+  socket: WebSocket;
+  roomInfo: RoomPayload;
+  initial: UsersPayload;
+}> {
   const response = await workerFetch(`/ws/${encodeURIComponent(room)}`, {
     headers: { Upgrade: "websocket" },
   });
@@ -56,22 +108,23 @@ async function openSocket(room: string): Promise<{ socket: WebSocket; initial: U
   const socket = response.webSocket;
   expect(socket).not.toBeNull();
   socket!.binaryType = "arraybuffer";
+  const roomInfo = nextRoom(socket!);
   const initial = nextUsers(socket!);
   socket!.accept();
-  return { socket: socket!, initial: await initial };
+  return { socket: socket!, roomInfo: await roomInfo, initial: await initial };
 }
 
 afterEach(async () => {
   await reset();
 });
 
-async function roomList(): Promise<Array<{ name: string; count: number }>> {
+async function roomList(): Promise<LobbyRoomPayload[]> {
   const response = await workerFetch("/rooms");
   expect(response.ok).toBe(true);
   return response.json();
 }
 
-async function expectRoomList(expected: Array<{ name: string; count: number }>): Promise<void> {
+async function expectRoomList(expected: LobbyRoomPayload[]): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
     if (JSON.stringify(await roomList()) === JSON.stringify(expected)) return;
     await scheduler.wait(1);
@@ -104,8 +157,9 @@ describe("Worker HTTP routes", () => {
 });
 
 describe("Room WebSocket Durable Object", () => {
-  it("canonicalizes room identity, validates control frames, and relays bytes exactly", async () => {
+  it("canonicalizes room identity, validates control frames, and relays wrapped bytes", async () => {
     const first = await openSocket(" café ");
+    expect(first.roomInfo).toEqual({ type: "room", quality: null });
     expect(first.initial).toEqual({ type: "users", count: 1, names: ["anon"] });
 
     let update = nextUsers(first.socket);
@@ -113,10 +167,11 @@ describe("Room WebSocket Durable Object", () => {
     expect(await update).toEqual({ type: "users", count: 1, names: ["Ada"] });
 
     update = nextUsers(first.socket);
-    const second = await openSocket("cafe\u0301");
+    const second = await openSocket("café");
+    expect(second.roomInfo).toEqual({ type: "room", quality: null });
     expect([...(await update).names].sort()).toEqual(["Ada", "anon"]);
     expect([...second.initial.names].sort()).toEqual(["Ada", "anon"]);
-    expect(await roomList()).toEqual([{ name: "café", count: 2 }]);
+    expect(await roomList()).toEqual([{ name: "café", count: 2, quality: null }]);
 
     const longName = "🙂".repeat(40);
     const firstNames = nextUsers(first.socket);
@@ -134,21 +189,74 @@ describe("Room WebSocket Durable Object", () => {
     expect(forgedDelivered).toBe(false);
     second.socket.removeEventListener("message", markForged);
 
+    // First packet (50hz magic byte) locks the room and is relayed wrapped.
     const payload = new Uint8Array([1, 52, 18, 205, 171]);
-    const relayed = nextMessage(second.socket);
-    let senderEchoed = false;
-    const markEcho = () => { senderEchoed = true; };
-    first.socket.addEventListener("message", markEcho, { once: true });
+    const firstLock = nextRoom(first.socket);
+    const secondLock = nextRoom(second.socket);
+    const relayed = nextBinary(second.socket);
+    let binaryEchoed = false;
+    const markEcho = (event: MessageEvent) => {
+      if (event.data instanceof ArrayBuffer) binaryEchoed = true;
+    };
+    first.socket.addEventListener("message", markEcho);
     first.socket.send(payload.buffer);
-    expect(new Uint8Array((await relayed).data as ArrayBuffer)).toEqual(payload);
+    expect(await firstLock).toEqual({ type: "room", quality: "50hz" });
+    expect(await secondLock).toEqual({ type: "room", quality: "50hz" });
+    const delivered = unwrap(await relayed);
+    expect(delivered.sender).toBe("Ada");
+    expect(delivered.packet).toEqual(payload);
     await scheduler.wait(5);
-    expect(senderEchoed).toBe(false);
+    expect(binaryEchoed).toBe(false);
     first.socket.removeEventListener("message", markEcho);
+    await expectRoomList([{ name: "café", count: 2, quality: "50hz" }]);
+
+    // A mismatched packet (25hz) is rejected, not relayed.
+    let mismatchDelivered = false;
+    const markMismatch = (event: MessageEvent) => {
+      if (event.data instanceof ArrayBuffer) mismatchDelivered = true;
+    };
+    first.socket.addEventListener("message", markMismatch);
+    const rejection = nextError(second.socket);
+    second.socket.send(new Uint8Array([2, 7, 0]).buffer);
+    expect(await rejection).toEqual({ type: "error", code: "quality-mismatch", quality: "50hz" });
+    await scheduler.wait(5);
+    expect(mismatchDelivered).toBe(false);
+    first.socket.removeEventListener("message", markMismatch);
 
     const remaining = nextUsers(first.socket);
     second.socket.close(1000, "done");
     expect(await remaining).toEqual({ type: "users", count: 1, names: ["Ada"] });
     first.socket.close(1000, "done");
+    await expectRoomList([]);
+
+    // The lock clears once the room empties.
+    const reopened = await openSocket("café");
+    expect(reopened.roomInfo).toEqual({ type: "room", quality: null });
+    reopened.socket.close(1000, "done");
+    await expectRoomList([]);
+  });
+
+  it("locks the room from the first hello that carries a quality", async () => {
+    const first = await openSocket("hello-lock");
+    expect(first.roomInfo.quality).toBeNull();
+    const locked = nextRoom(first.socket);
+    first.socket.send(JSON.stringify({ type: "hello", name: "Ada", quality: "25hz" }));
+    expect(await locked).toEqual({ type: "room", quality: "25hz" });
+
+    const second = await openSocket("hello-lock");
+    expect(second.roomInfo).toEqual({ type: "room", quality: "25hz" });
+
+    // A later hello cannot re-lock, and bogus qualities are ignored.
+    first.socket.send(JSON.stringify({ type: "hello", name: "Ada", quality: "50hz" }));
+    first.socket.send(JSON.stringify({ type: "hello", name: "Ada", quality: "bogus" }));
+    await scheduler.wait(5);
+    const third = await openSocket("hello-lock");
+    expect(third.roomInfo).toEqual({ type: "room", quality: "25hz" });
+    await expectRoomList([{ name: "hello-lock", count: 3, quality: "25hz" }]);
+
+    first.socket.close(1000, "done");
+    second.socket.close(1000, "done");
+    third.socket.close(1000, "done");
     await expectRoomList([]);
   });
 
@@ -158,15 +266,18 @@ describe("Room WebSocket Durable Object", () => {
     const receiver = await openSocket("bounds");
     await senderUpdate;
 
+    // Legacy headerless (even-length) packets relay without locking the room.
     const boundary = new Uint8Array(64 * 1024);
     boundary[0] = 99;
     boundary[boundary.length - 1] = 42;
-    const relayed = nextMessage(receiver.socket);
+    const relayed = nextBinary(receiver.socket);
     sender.socket.send(boundary.buffer);
-    const received = new Uint8Array((await relayed).data as ArrayBuffer);
-    expect(received.byteLength).toBe(boundary.byteLength);
-    expect(received[0]).toBe(99);
-    expect(received.at(-1)).toBe(42);
+    const delivered = unwrap(await relayed);
+    expect(delivered.sender).toBe("anon");
+    expect(delivered.packet.byteLength).toBe(boundary.byteLength);
+    expect(delivered.packet[0]).toBe(99);
+    expect(delivered.packet.at(-1)).toBe(42);
+    expect((await roomList())[0]?.quality ?? null).toBeNull();
 
     const oversizedClose = nextClose(sender.socket);
     sender.socket.send(new ArrayBuffer(64 * 1024 + 1));
@@ -186,7 +297,7 @@ describe("Room WebSocket Durable Object", () => {
     expect((await closed).code).toBe(1009);
   });
 
-  it("preserves hibernatable sockets and name attachments across eviction", async () => {
+  it("preserves hibernatable sockets, attachments, and the quality lock across eviction", async () => {
     const first = await openSocket("hibernate");
     let firstUpdate = nextUsers(first.socket);
     first.socket.send(JSON.stringify({ type: "hello", name: "Ada" }));
@@ -201,9 +312,21 @@ describe("Room WebSocket Durable Object", () => {
     await Promise.all([bothFirst, bothSecond]);
 
     await evictDurableObject(env.ROOMS.getByName("hibernate"));
-    const relayed = nextMessage(second.socket);
+
+    // First packet locks (25hz) even though the DO was evicted in between.
+    const locked = nextRoom(second.socket);
+    const relayed = nextBinary(second.socket);
     first.socket.send(new Uint8Array([2, 7, 0]).buffer);
-    expect(new Uint8Array((await relayed).data as ArrayBuffer)).toEqual(new Uint8Array([2, 7, 0]));
+    expect(await locked).toEqual({ type: "room", quality: "25hz" });
+    const delivered = unwrap(await relayed);
+    expect(delivered.sender).toBe("Ada");
+    expect(delivered.packet).toEqual(new Uint8Array([2, 7, 0]));
+
+    // The lock survives another eviction (it lives in DO storage).
+    await evictDurableObject(env.ROOMS.getByName("hibernate"));
+    const rejection = nextError(second.socket);
+    second.socket.send(new Uint8Array([1, 1, 2]).buffer);
+    expect(await rejection).toEqual({ type: "error", code: "quality-mismatch", quality: "25hz" });
 
     const afterEvictionFirst = nextUsers(first.socket);
     const afterEvictionSecond = nextUsers(second.socket);
@@ -226,8 +349,23 @@ describe("Lobby Durable Object", () => {
     });
 
     expect(await runDurableObjectAlarm(lobby)).toBe(true);
-    expect(await roomList()).toEqual([{ name: "quiet-room", count: 1 }]);
+    expect(await roomList()).toEqual([{ name: "quiet-room", count: 1, quality: null }]);
 
+    active.socket.close(1000, "done");
+    await expectRoomList([]);
+  });
+
+  it("preserves a stored quality through reconciliation", async () => {
+    const active = await openSocket("sticky");
+    const lobby = env.LOBBY.getByName("main");
+    await runInDurableObject(lobby, async (_instance, state) => {
+      await state.storage.put("rooms", {
+        sticky: { count: 1, lastUpdated: Date.now() - 11 * 60 * 1000, quality: "12_5hz" },
+      });
+    });
+
+    expect(await runDurableObjectAlarm(lobby)).toBe(true);
+    expect(await roomList()).toEqual([{ name: "sticky", count: 1, quality: "12_5hz" }]);
     active.socket.close(1000, "done");
     await expectRoomList([]);
   });
@@ -268,6 +406,6 @@ describe("Lobby Durable Object", () => {
       await state.storage.put("rooms", { legacy: 2 });
     });
     const response = await lobby.fetch("http://internal/list");
-    expect(await response.json()).toEqual([{ name: "legacy", count: 2 }]);
+    expect(await response.json()).toEqual([{ name: "legacy", count: 2, quality: null }]);
   });
 });

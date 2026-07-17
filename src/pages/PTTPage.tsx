@@ -9,15 +9,17 @@ import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { HexDump } from "@/components/ptt/HexDump";
 import { HexStream } from "@/components/audio/HexStream";
+import { MessageList, type VoiceMessage } from "@/components/ptt/MessageList";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
-import { ModelManagement } from "@/components/codec/ModelManagement";
 import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
-import { SR, SUGGESTED_ROOMS } from "@/lib/constants";
+import { SettingsSheet } from "@/components/layout/SettingsSheet";
+import { codec as codecService } from "@/lib/codec-service";
+import { Quality } from "@/types/codec";
+import { QUALITY_OPTIONS, SR, SUGGESTED_ROOMS } from "@/lib/constants";
 import { randomRoomName } from "@/lib/utils/names";
-import { fmt } from "@/lib/format";
+import { fmt, qualityLabel } from "@/lib/format";
 
 type PTTState = "idle" | "recording" | "encoding" | "sending" | "disabled";
 
@@ -45,6 +47,7 @@ const LOG_COLORS: Record<LogEntry["type"], string> = {
 };
 
 let logId = 0;
+let messageId = 0;
 
 export function PTTPage() {
   const codec = useCodecContext();
@@ -54,9 +57,14 @@ export function PTTPage() {
   const { play: playAudioSamples, stop: stopAudioPlayback } = useAudioPlayer();
 
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [messages, setMessages] = useState<VoiceMessage[]>([]);
+  const [playingMessageId, setPlayingMessageId] = useState<number | null>(null);
+  const [loadingMessageId, setLoadingMessageId] = useState<number | null>(null);
   const [pttState, setPttState] = useState<PTTState>("disabled");
   const [roomInput, setRoomInput] = useState("");
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [openHexIds, setOpenHexIds] = useState<Set<number>>(() => new Set());
   const [hexPlayback, setHexPlayback] = useState<HexPlayback | null>(null);
@@ -66,7 +74,10 @@ export function PTTPage() {
   const playbackQueueRef = useRef<Promise<void>>(Promise.resolve());
   const playbackGenerationRef = useRef(0);
   const mountedRef = useRef(true);
-  const isPttReady = codec.modelsLoaded && room.isConnected;
+  const roomQuality = (room.roomQuality as Quality | null) ?? null;
+  const effectiveQuality = roomQuality ?? codec.activeQuality;
+  const isPttReady =
+    room.isConnected && !!effectiveQuality && codec.isQualityLoaded(effectiveQuality);
   const savedUsername = room.username.trim();
 
   useEffect(() => {
@@ -82,6 +93,9 @@ export function PTTPage() {
     playbackGenerationRef.current += 1;
     stopAudioPlayback();
     setHexPlayback(null);
+    setMessages([]);
+    setPlayingMessageId(null);
+    setLoadingMessageId(null);
   }, [room.isConnected, room.currentRoom, stopAudioPlayback]);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "dim", hexData?: Uint8Array, hexType?: "sent" | "recv") => {
@@ -106,13 +120,42 @@ export function PTTPage() {
   useEffect(() => {
     if (room.isConnected && !prevConnected.current && room.currentRoom) {
       addLog(`Joined "${room.currentRoom}"`, "ok");
-      if (codec.modelsLoaded) setPttState("idle");
+      if (isPttReady) setPttState("idle");
     } else if (!room.isConnected && prevConnected.current) {
       addLog("Disconnected", "dim");
       setPttState("disabled");
     }
     prevConnected.current = room.isConnected;
-  }, [room.isConnected, room.currentRoom, codec.modelsLoaded, addLog]);
+  }, [room.isConnected, room.currentRoom, isPttReady, addLog]);
+
+  // ── Adopt the room's locked quality ──
+  useEffect(() => {
+    if (!room.isConnected || !roomQuality) return;
+    if (codec.activeQuality !== roomQuality) {
+      codec.setActiveQuality(roomQuality);
+      addLog(`Room is locked to ${qualityLabel(roomQuality)}`, "info");
+    }
+    if (!codec.isQualityLoaded(roomQuality) && codec.state !== "loading") {
+      addLog(`Downloading ${qualityLabel(roomQuality)} models for this room...`, "info");
+      codec.loadModels(roomQuality).catch((e: unknown) => {
+        addLog("Model load: " + (e instanceof Error ? e.message : String(e)), "warn");
+      });
+    }
+  }, [room.isConnected, roomQuality, codec, addLog]);
+
+  // ── Relay rejections ──
+  useEffect(
+    () =>
+      room.onRelayError((message) => {
+        if (message.code === "quality-mismatch") {
+          const label = message.quality ? qualityLabel(message.quality as Quality) : "another quality";
+          addLog(`Packet dropped — room is locked to ${label}`, "warn");
+        } else {
+          addLog(`Relay error: ${message.code}`, "warn");
+        }
+      }),
+    [room, addLog],
+  );
 
   const prevUserCount = useRef(room.userCount);
   useEffect(() => {
@@ -123,48 +166,87 @@ export function PTTPage() {
     prevUserCount.current = room.userCount;
   }, [room.isConnected, room.userCount, stats, addLog]);
 
-  // ── Decode incoming ──
-  const handleDecode = useCallback((data: ArrayBuffer) => {
-    const packet = new Uint8Array(data);
+  // ── Playback (incoming auto-play and message replay share this path) ──
+  const playMessage = useCallback((message: VoiceMessage, { announce = false } = {}) => {
     const generation = playbackGenerationRef.current;
-    stats.addRecv(packet.length);
-    stats.setLastRecv(packet.length);
-    addLog(`Received ${fmt(packet.length)}`, "recv", packet, "recv");
-
     const job = playbackQueueRef.current.then(async () => {
       const isCurrent = () =>
         mountedRef.current && playbackGenerationRef.current === generation;
       if (!isCurrent()) return;
 
       try {
+        setLoadingMessageId(message.id);
         const t0 = performance.now();
-        const audio = await codec.decode(packet);
+        const audio = await codec.decode(message.packet);
         if (!isCurrent()) return;
         const dt = (performance.now() - t0) / 1000;
-        addLog(`Decoded ${dt.toFixed(2)}s \u2192 ${(audio.length / SR).toFixed(1)}s audio`, "ok");
-        stats.setDecodeTime(dt);
+        if (announce) {
+          addLog(`Decoded ${dt.toFixed(2)}s \u2192 ${(audio.length / SR).toFixed(1)}s audio`, "ok");
+          stats.setDecodeTime(dt);
+        }
+        const duration = audio.length / SR;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === message.id && m.duration === null ? { ...m, duration } : m)),
+        );
         const playbackId = ++playbackIdRef.current;
-        setHexPlayback({
-          id: playbackId,
-          packet,
-          duration: audio.length / SR,
-        });
+        setHexPlayback({ id: playbackId, packet: message.packet, duration });
+        setLoadingMessageId(null);
+        setPlayingMessageId(message.id);
         try {
           await playAudioSamples(audio);
         } finally {
           if (isCurrent()) {
             setHexPlayback((current) => current?.id === playbackId ? null : current);
+            setPlayingMessageId((current) => current === message.id ? null : current);
           }
         }
       } catch (e) {
         if (isCurrent()) {
           addLog("Decode: " + (e instanceof Error ? e.message : String(e)), "warn");
         }
+      } finally {
+        if (isCurrent()) {
+          setLoadingMessageId((current) => current === message.id ? null : current);
+        }
       }
     });
 
     playbackQueueRef.current = job.catch(() => {});
   }, [codec, stats, playAudioSamples, addLog]);
+
+  const handlePlayToggle = useCallback((message: VoiceMessage) => {
+    if (playingMessageId === message.id) {
+      playbackGenerationRef.current += 1;
+      stopAudioPlayback();
+      setPlayingMessageId(null);
+      setHexPlayback(null);
+      return;
+    }
+    playMessage(message);
+  }, [playingMessageId, playMessage, stopAudioPlayback]);
+
+  // ── Decode incoming ──
+  const handleDecode = useCallback((data: ArrayBuffer, sender: string | null) => {
+    const packet = new Uint8Array(data);
+    stats.addRecv(packet.length);
+    stats.setLastRecv(packet.length);
+    addLog(`Received ${fmt(packet.length)} from ${sender ?? "anon"}`, "recv", packet, "recv");
+
+    const parsed = codecService.parsePacket(packet);
+    const message: VoiceMessage = {
+      id: ++messageId,
+      dir: "recv",
+      sender: sender ?? "anon",
+      packet,
+      quality: parsed?.hasMagicByte ? parsed.quality : null,
+      duration: parsed
+        ? codecService.estimateDuration(parsed.tokenBytes.length / 2, parsed.quality)
+        : null,
+      time: Date.now(),
+    };
+    setMessages((prev) => [...prev, message].slice(-100));
+    playMessage(message, { announce: true });
+  }, [stats, addLog, playMessage]);
 
   useEffect(() => room.onPacketReceived(handleDecode), [room, handleDecode]);
 
@@ -183,11 +265,11 @@ export function PTTPage() {
     if (!audio) { addLog("Too short", "dim"); setPttState("idle"); return; }
     setPttState("encoding");
     await new Promise(r => setTimeout(r, 50));
-    const dur = (audio.length / SR).toFixed(1);
-    addLog(`${dur}s recorded`, "info");
+    const duration = audio.length / SR;
+    addLog(`${duration.toFixed(1)}s recorded`, "info");
     try {
       const t0 = performance.now();
-      const packet = await codec.encode(audio);
+      const packet = await codec.encode(audio, effectiveQuality ?? undefined);
       const dt = (performance.now() - t0) / 1000;
       stats.setEncodeTime(dt);
       stats.setLastSent(packet.length);
@@ -195,11 +277,23 @@ export function PTTPage() {
       addLog(`Encoded ${dt.toFixed(2)}s \u2192 ${(packet.length - 1) / 2} tokens`, "ok");
       room.sendPacket(Uint8Array.from(packet).buffer);
       addLog(`Sent ${fmt(packet.length)}`, "ok", packet, "sent");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: ++messageId,
+          dir: "sent" as const,
+          sender: savedUsername || "You",
+          packet,
+          quality: effectiveQuality,
+          duration,
+          time: Date.now(),
+        },
+      ].slice(-100));
     } catch (e) {
       addLog("Encode: " + (e instanceof Error ? e.message : String(e)), "warn");
     }
     setPttState(isPttReady ? "idle" : "disabled");
-  }, [recorder, codec, stats, room, addLog, isPttReady]);
+  }, [recorder, codec, stats, room, addLog, isPttReady, effectiveQuality, savedUsername]);
 
   const effectiveState: PTTState =
     pttState === "recording" || pttState === "encoding" || pttState === "sending"
@@ -256,6 +350,9 @@ export function PTTPage() {
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
                       <span className="font-mono text-[0.8rem] font-semibold">{room.currentRoom}</span>
+                      {roomQuality && (
+                        <span className="text-[0.6rem] font-mono px-1.5 py-0.5 rounded bg-[var(--mantle)] text-[var(--tv-accent)]">{qualityLabel(roomQuality)}</span>
+                      )}
                       <span className="text-[0.65rem] text-[var(--overlay)]">{room.userCount} online</span>
                     </div>
                     {room.users.length > 0 && (
@@ -285,18 +382,17 @@ export function PTTPage() {
                       random
                     </button>
                     <div className="space-y-0.5">
-                      {(room.activeRooms.length > 0 ? room.activeRooms : SUGGESTED_ROOMS.map(n => ({ name: n, count: 0 }))).map(r => {
-                        const name = typeof r === "string" ? r : r.name;
-                        const count = typeof r === "string" ? 0 : r.count;
-                        return (
-                          <button key={name} onClick={() => handleJoin(name)}
-                            className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
-                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
-                            <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{name}</span>
-                            {count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{count}</span>}
-                          </button>
-                        );
-                      })}
+                      {(room.activeRooms.length > 0 ? room.activeRooms : SUGGESTED_ROOMS.map(n => ({ name: n, count: 0, quality: null }))).map(r => (
+                        <button key={r.name} onClick={() => handleJoin(r.name)}
+                          className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
+                          <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{r.name}</span>
+                          {r.count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{r.count}</span>}
+                          {r.count > 0 && r.quality && (
+                            <span className="text-[0.55rem] text-[var(--overlay)] font-mono">{qualityLabel(r.quality as Quality)}</span>
+                          )}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -305,6 +401,36 @@ export function PTTPage() {
               {/* Codec */}
               <div className="p-3 border-b border-[var(--surface0)]">
                 <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">Codec</div>
+                <div className="flex gap-1 mb-1.5">
+                  {QUALITY_OPTIONS.map(opt => {
+                    const active = effectiveQuality === opt.value;
+                    const loaded = codec.isQualityLoaded(opt.value);
+                    const locked = room.isConnected && !!roomQuality && opt.value !== roomQuality;
+                    return (
+                      <button
+                        key={opt.value}
+                        disabled={locked || codec.state === "loading"}
+                        title={locked ? "Room locks quality" : loaded ? `Encode with ${opt.label}` : `Download & use ${opt.label}`}
+                        onClick={() => {
+                          if (loaded) codec.setActiveQuality(opt.value);
+                          else codec.loadModels(opt.value).then(ok => { if (ok) codec.setActiveQuality(opt.value); }).catch(() => {});
+                        }}
+                        className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors ${
+                          active
+                            ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
+                            : locked
+                              ? "text-[var(--surface2)] cursor-not-allowed"
+                              : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)] cursor-pointer"
+                        }`}
+                      >
+                        {opt.label}{loaded ? "" : " ↓"}
+                      </button>
+                    );
+                  })}
+                </div>
+                {room.isConnected && roomQuality && (
+                  <div className="text-[0.58rem] text-[var(--overlay)] mb-1.5">Quality locked by room</div>
+                )}
                 <div className="flex items-center gap-2 mb-2">
                   <div className={`w-1.5 h-1.5 rounded-full ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
                   <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
@@ -342,17 +468,12 @@ export function PTTPage() {
               {/* Spacer + bottom links */}
               <div className="flex-1" />
               <div className="p-3">
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <button className="flex items-center gap-2 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer mb-2 w-full">
-                      <GearIcon size={14} /> Settings
-                    </button>
-                  </SheetTrigger>
-                  <SheetContent onOpenAutoFocus={e => e.preventDefault()} className="bg-[var(--mantle)] border-[var(--surface0)] text-[var(--text)] overflow-y-auto">
-                    <SheetHeader className="px-6 pt-6 pb-2"><SheetTitle className="text-[var(--text)]">Settings</SheetTitle></SheetHeader>
-                    <div className="px-6 py-4"><ModelManagement /></div>
-                  </SheetContent>
-                </Sheet>
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex items-center gap-2 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer mb-2 w-full"
+                >
+                  <GearIcon size={14} /> Settings
+                </button>
               </div>
             </div>
 
@@ -416,51 +537,64 @@ export function PTTPage() {
                 ))}
               </div>
 
-              {/* Activity log */}
-              <div className="flex-1 min-h-0 px-4 py-3">
-                <div className="h-full rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden flex flex-col">
-                  <ScrollArea className="flex-1">
-                    <div className="font-mono text-[0.75rem] leading-[1.8] p-3">
-                      {logEntries.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-10 gap-2 text-[var(--surface2)]">
-                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
-                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                            <line x1="12" x2="12" y1="19" y2="22" />
-                          </svg>
-                          <span className="text-[0.7rem]">Join a room & load models to start</span>
-                          <span className="text-[0.55rem] opacity-50">Activity will appear here</span>
-                        </div>
-                      )}
-                      {logEntries.map(entry => (
-                        <div key={entry.id} className="log-entry">
-                          {entry.message && (
-                            <div
-                              className={`${LOG_COLORS[entry.type]} ${entry.hexData ? "cursor-pointer select-none" : ""}`}
-                              onClick={() => entry.hexData && toggleHex(entry.id)}
-                            >
-                              {entry.hexData && (
-                                <span className={`mr-1 inline-block text-[0.55rem] text-[var(--overlay)] transition-transform ${openHexIds.has(entry.id) ? "rotate-90" : ""}`}>
-                                  {"\u25b8"}
-                                </span>
-                              )}
-                              {entry.message}
-                            </div>
-                          )}
-                          {entry.hexData && entry.hexType && (
-                            <HexDump
-                              data={entry.hexData}
-                              type={entry.hexType}
-                              open={openHexIds.has(entry.id)}
-                              showTrigger={false}
-                            />
-                          )}
-                        </div>
-                      ))}
-                      <div ref={logEndRef} />
-                    </div>
-                  </ScrollArea>
+              {/* Voice messages */}
+              <div className="flex-1 min-h-0 px-4 pt-3">
+                <div className="h-full rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
+                  <MessageList
+                    messages={messages}
+                    playingId={playingMessageId}
+                    loadingId={loadingMessageId}
+                    onPlay={handlePlayToggle}
+                  />
                 </div>
+              </div>
+
+              {/* Diagnostics (demoted activity log) */}
+              <div className="px-4 py-2 flex-shrink-0">
+                <button
+                  onClick={() => setDiagnosticsOpen(o => !o)}
+                  className="flex items-center gap-1.5 text-[0.62rem] font-mono text-[var(--overlay)] hover:text-[var(--subtext)] transition-colors cursor-pointer"
+                >
+                  <span className={`inline-block text-[0.5rem] transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`}>\u25b8</span>
+                  Diagnostics \u00b7 {logEntries.length}
+                </button>
+                {diagnosticsOpen && (
+                  <div className="mt-1.5 h-36 rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
+                    <ScrollArea className="h-full">
+                      <div className="font-mono text-[0.7rem] leading-[1.8] p-2.5">
+                        {logEntries.length === 0 && (
+                          <span className="text-[var(--surface2)]">No activity yet</span>
+                        )}
+                        {logEntries.map(entry => (
+                          <div key={entry.id} className="log-entry">
+                            {entry.message && (
+                              <div
+                                className={`${LOG_COLORS[entry.type]} ${entry.hexData ? "cursor-pointer select-none" : ""}`}
+                                onClick={() => entry.hexData && toggleHex(entry.id)}
+                              >
+                                {entry.hexData && (
+                                  <span className={`mr-1 inline-block text-[0.55rem] text-[var(--overlay)] transition-transform ${openHexIds.has(entry.id) ? "rotate-90" : ""}`}>
+                                    {"\u25b8"}
+                                  </span>
+                                )}
+                                {entry.message}
+                              </div>
+                            )}
+                            {entry.hexData && entry.hexType && (
+                              <HexDump
+                                data={entry.hexData}
+                                type={entry.hexType}
+                                open={openHexIds.has(entry.id)}
+                                showTrigger={false}
+                              />
+                            )}
+                          </div>
+                        ))}
+                        <div ref={logEndRef} />
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -471,6 +605,7 @@ export function PTTPage() {
         open={downloadOpen}
         onOpenChange={setDownloadOpen}
       />
+      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>
   );
 }

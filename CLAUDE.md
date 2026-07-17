@@ -17,7 +17,7 @@ src/
     QRPage.tsx          — Voice QR tool (tabs: Record / Decode)
   components/
     layout/             — TopBar, SettingsSheet, PageShell
-    ptt/                — PTTButton, ActivityLog, HexDump, WaveformCanvas, ShareModal, StatsStrip, ConnectionPanel
+    ptt/                — PTTButton, MessageList, ActivityLog, HexDump, WaveformCanvas, ShareModal, StatsStrip, ConnectionPanel
     qr/                 — RecordPanel, DecodePanel, DecodePlayer, QRResult, QualityPicker, Dropzone, CameraScanner, HexSheet
     qr/record/          — StageSwapRecord, SplitDeckRecord + shared pieces (QualityCard, CodecCard, RecordButton, TrimToggle)
     room/               — RoomLobby, RoomActiveCard, RoomInput, RoomList, RoomItem, UserTag
@@ -73,6 +73,7 @@ public/
 - **Split encoder model** — shared WavLM encoder.onnx (595MB) + per-quality compressor + decoder
 - **iSTFT in TypeScript** — Cooley-Tukey radix-2 iFFT + overlap-add. Math-critical, do not modify.
 - **Magic byte wire format** — 0x01=50hz, 0x02=25hz, 0x03=12.5hz
+- **Room quality lock** — a room's first participant locks its quality (hello message or first packet's magic byte; stored in the Room DO, cleared when the room empties). The relay rejects mismatched packets with a `{type:"error"}` control message and wraps relayed packets with the sender name: `[0xFE][nameLen][name utf8][packet]`.
 - **IndexedDB caching** — models cached after first download ('focalcodec-models' store)
 - **AudioWorklet** — replaced deprecated ScriptProcessorNode for recording
 - **ORT via CDN** — loaded from `<script>` tag in index.html, accessed as `window.ort`

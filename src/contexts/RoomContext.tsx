@@ -10,19 +10,32 @@ import {
 } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useRooms } from "@/hooks/useRooms";
-import { normalizeDisplayName, normalizeRoomName } from "@/lib/ws/relay";
+import { useCodecContext } from "@/contexts/CodecContext";
+import {
+  normalizeDisplayName,
+  normalizeRoomName,
+  type LobbyRoom,
+  type RelayErrorMessage,
+  type RelayQuality,
+} from "@/lib/ws/relay";
+
+type PacketHandler = (data: ArrayBuffer, sender: string | null) => void;
+type RelayErrorHandler = (message: RelayErrorMessage) => void;
 
 interface RoomContextValue {
   currentRoom: string | null;
   users: string[];
   userCount: number;
   isConnected: boolean;
-  activeRooms: { name: string; count: number }[];
+  /** The quality this room is locked to (set by its first participant) */
+  roomQuality: RelayQuality | null;
+  activeRooms: LobbyRoom[];
   recentRooms: string[];
   joinRoom: (name: string) => boolean;
   leaveRoom: () => void;
   sendPacket: (data: ArrayBuffer) => void;
-  onPacketReceived: (handler: (data: ArrayBuffer) => void) => () => void;
+  onPacketReceived: (handler: PacketHandler) => () => void;
+  onRelayError: (handler: RelayErrorHandler) => () => void;
   username: string;
   setUsername: (name: string) => void;
 }
@@ -42,16 +55,23 @@ function loadUsername(): string {
 export function RoomProvider({ children }: { children: ReactNode }) {
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [username, setUsernameState] = useState(loadUsername);
-  const packetHandlers = useRef(new Set<(data: ArrayBuffer) => void>());
+  const packetHandlers = useRef(new Set<PacketHandler>());
+  const errorHandlers = useRef(new Set<RelayErrorHandler>());
+  const codec = useCodecContext();
 
   const { activeRooms, recentRooms, addRecentRoom, startPolling, stopPolling } =
     useRooms();
 
-  const { isConnected, connect, disconnect, send, updateName, users, userCount } =
+  const { isConnected, connect, disconnect, send, updateName, users, userCount, roomQuality } =
     useWebSocket({
-      onBinaryMessage: (data) => {
+      onBinaryMessage: (data, sender) => {
         for (const handler of packetHandlers.current) {
-          handler(data);
+          handler(data, sender);
+        }
+      },
+      onRelayError: (message) => {
+        for (const handler of errorHandlers.current) {
+          handler(message);
         }
       },
       onConnected: (room) => {
@@ -76,17 +96,27 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     (name: string) => {
       const room = normalizeRoomName(name);
       if (!room) return false;
-      connect(room, username || "anon");
+      connect(room, username || "anon", codec.activeQuality);
       return true;
     },
-    [connect, username],
+    [connect, username, codec.activeQuality],
   );
 
   const onPacketReceived = useCallback(
-    (handler: (data: ArrayBuffer) => void) => {
+    (handler: PacketHandler) => {
       packetHandlers.current.add(handler);
       return () => {
         packetHandlers.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const onRelayError = useCallback(
+    (handler: RelayErrorHandler) => {
+      errorHandlers.current.add(handler);
+      return () => {
+        errorHandlers.current.delete(handler);
       };
     },
     [],
@@ -108,12 +138,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       users,
       userCount,
       isConnected,
+      roomQuality,
       activeRooms,
       recentRooms,
       joinRoom,
       leaveRoom: disconnect,
       sendPacket: send,
       onPacketReceived,
+      onRelayError,
       username,
       setUsername,
     }),
@@ -122,12 +154,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       users,
       userCount,
       isConnected,
+      roomQuality,
       activeRooms,
       recentRooms,
       joinRoom,
       disconnect,
       send,
       onPacketReceived,
+      onRelayError,
       username,
       setUsername,
     ],

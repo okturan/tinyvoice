@@ -3,26 +3,45 @@ import { trimLeadingSilence } from "../src/lib/audio/trim";
 
 const SR = 16000;
 
-function signal(silenceSec: number, speechSec: number, amplitude = 0.3): Float32Array {
-  const out = new Float32Array(Math.round((silenceSec + speechSec) * SR));
-  const speechStart = Math.round(silenceSec * SR);
-  for (let i = speechStart; i < out.length; i++) {
-    out[i] = amplitude * Math.sin((2 * Math.PI * 220 * (i - speechStart)) / SR);
+function tone(seconds: number, amplitude: number, freq = 220): Float32Array {
+  const out = new Float32Array(Math.round(seconds * SR));
+  for (let i = 0; i < out.length; i++) {
+    out[i] = amplitude * Math.sin((2 * Math.PI * freq * i) / SR);
+  }
+  return out;
+}
+
+function concat(...parts: Float32Array[]): Float32Array {
+  const out = new Float32Array(parts.reduce((s, p) => s + p.length, 0));
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
   }
   return out;
 }
 
 describe("trimLeadingSilence", () => {
-  it("cuts leading silence down to the pre-roll", () => {
-    const audio = signal(2, 1);
+  it("cuts leading digital silence down to the pre-roll", () => {
+    const audio = concat(new Float32Array(2 * SR), tone(1, 0.3));
     const trimmed = trimLeadingSilence(audio, SR);
-    const expected = 1 * SR + 0.12 * SR;
-    expect(trimmed.length).toBeGreaterThanOrEqual(expected - 0.02 * SR);
-    expect(trimmed.length).toBeLessThanOrEqual(expected + 0.02 * SR);
+    const expected = 1 * SR + 0.1 * SR;
+    expect(trimmed.length).toBeGreaterThanOrEqual(expected - 0.03 * SR);
+    expect(trimmed.length).toBeLessThanOrEqual(expected + 0.03 * SR);
+  });
+
+  it("cuts 'silentish' lead-in room tone above the fixed floor", () => {
+    // Room tone at 0.05 amplitude would fool a fixed 0.015 gate; the
+    // adaptive gate keys off the recording's own noise floor.
+    const audio = concat(tone(1.5, 0.05, 90), tone(1, 0.5));
+    const trimmed = trimLeadingSilence(audio, SR);
+    const expected = 1 * SR + 0.1 * SR;
+    expect(trimmed.length).toBeGreaterThanOrEqual(expected - 0.05 * SR);
+    expect(trimmed.length).toBeLessThanOrEqual(expected + 0.05 * SR);
   });
 
   it("keeps immediate speech untouched", () => {
-    const audio = signal(0, 1);
+    const audio = tone(1, 0.3);
     expect(trimLeadingSilence(audio, SR)).toBe(audio);
   });
 
@@ -31,9 +50,13 @@ describe("trimLeadingSilence", () => {
     expect(trimLeadingSilence(audio, SR)).toBe(audio);
   });
 
-  it("ignores low-level noise below the threshold", () => {
-    const audio = signal(1, 1);
-    for (let i = 0; i < SR; i++) audio[i] = 0.004 * Math.sin((2 * Math.PI * 100 * i) / SR);
+  it("leaves steady room tone with no speech alone", () => {
+    const audio = tone(2, 0.03, 90);
+    expect(trimLeadingSilence(audio, SR)).toBe(audio);
+  });
+
+  it("ignores quiet noise below the minimum threshold", () => {
+    const audio = concat(tone(1, 0.004, 100), tone(1, 0.3));
     const trimmed = trimLeadingSilence(audio, SR);
     expect(trimmed.length).toBeLessThan(audio.length);
   });

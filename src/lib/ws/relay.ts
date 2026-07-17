@@ -18,10 +18,21 @@ const RETRYABLE_CLOSE_CODES = new Set([1001, 1006, 1011, 1012, 1013]);
 
 // ── Message types ──────────────────────────────────────
 
-/** Client sends this on connect to announce its username */
+/** Quality identifiers shared with the relay (match the Quality enum values) */
+export type RelayQuality = "50hz" | "25hz" | "12_5hz";
+const VALID_QUALITIES = new Set<string>(["50hz", "25hz", "12_5hz"]);
+
+export function normalizeRelayQuality(input: unknown): RelayQuality | null {
+  return typeof input === "string" && VALID_QUALITIES.has(input)
+    ? (input as RelayQuality)
+    : null;
+}
+
+/** Client sends this on connect to announce its username (and quality, to lock empty rooms) */
 export interface HelloMessage {
   type: "hello";
   name: string;
+  quality?: RelayQuality;
 }
 
 /** Server broadcasts this when the user list changes */
@@ -31,12 +42,52 @@ export interface UsersMessage {
   names: string[];
 }
 
-export type ServerMessage = UsersMessage;
+/** Server sends this on join and whenever the room's locked quality changes */
+export interface RoomInfoMessage {
+  type: "room";
+  quality: RelayQuality | null;
+}
+
+/** Server sends this to a sender whose packet was rejected */
+export interface RelayErrorMessage {
+  type: "error";
+  code: string;
+  quality?: RelayQuality | null;
+}
+
+export type ServerMessage = UsersMessage | RoomInfoMessage | RelayErrorMessage;
 
 /** A room returned from the lobby API */
 export interface LobbyRoom {
   name: string;
   count: number;
+  quality: RelayQuality | null;
+}
+
+// ── Relay payload wrapping ─────────────────────────────
+
+/** Server→client packets are wrapped: [0xFE][nameLen][sender utf8][packet] */
+export const RELAY_WRAP_MARKER = 0xfe;
+
+export function unwrapRelayPayload(data: ArrayBuffer): {
+  sender: string | null;
+  packet: ArrayBuffer;
+} {
+  const bytes = new Uint8Array(data);
+  if (bytes.byteLength >= 2 && bytes[0] === RELAY_WRAP_MARKER) {
+    const nameLength = bytes[1];
+    if (bytes.byteLength >= 2 + nameLength) {
+      let sender: string | null = null;
+      try {
+        sender = new TextDecoder().decode(bytes.subarray(2, 2 + nameLength)) || null;
+      } catch {
+        sender = null;
+      }
+      return { sender, packet: data.slice(2 + nameLength) };
+    }
+  }
+  // Unwrapped (older worker) — treat the whole payload as the packet.
+  return { sender: null, packet: data };
 }
 
 // ── Helpers ────────────────────────────────────────────
@@ -52,10 +103,25 @@ export function isUsersMessage(data: unknown): data is UsersMessage {
     candidate.names.every(isDisplayName);
 }
 
+export function isRoomInfoMessage(data: unknown): data is RoomInfoMessage {
+  if (typeof data !== "object" || data === null) return false;
+  const candidate = data as Partial<RoomInfoMessage>;
+  return candidate.type === "room" &&
+    (candidate.quality === null || normalizeRelayQuality(candidate.quality) !== null);
+}
+
+export function isRelayErrorMessage(data: unknown): data is RelayErrorMessage {
+  if (typeof data !== "object" || data === null) return false;
+  const candidate = data as Partial<RelayErrorMessage>;
+  return candidate.type === "error" && typeof candidate.code === "string";
+}
+
 export function parseServerMessage(raw: string): ServerMessage | null {
   try {
     const msg: unknown = JSON.parse(raw);
     if (isUsersMessage(msg)) return msg;
+    if (isRoomInfoMessage(msg)) return msg;
+    if (isRelayErrorMessage(msg)) return msg;
     return null;
   } catch {
     return null;
@@ -77,7 +143,11 @@ export function parseLobbyRooms(data: unknown): LobbyRoom[] | null {
     ) {
       return null;
     }
-    rooms.push({ name: candidate.name, count: candidate.count as number });
+    rooms.push({
+      name: candidate.name,
+      count: candidate.count as number,
+      quality: normalizeRelayQuality(candidate.quality),
+    });
   }
   return rooms;
 }
