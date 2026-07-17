@@ -10,6 +10,21 @@ export interface HexStreamProps {
   hasMagicByte?: boolean;
 }
 
+const HEAD_CLASS =
+  "font-bold text-[var(--green)] [text-shadow:0_0_8px_color-mix(in_srgb,var(--green)_60%,transparent)]";
+const UNPLAYED_CLASS =
+  "text-[color-mix(in_srgb,var(--subtext)_52%,var(--mantle))]";
+
+/** Comet tail: bytes just behind the head fade from green back to resting subtext. */
+function trailClass(distance: number): string | undefined {
+  if (distance === 0) return HEAD_CLASS;
+  if (distance === 1) return "text-[var(--green)]";
+  if (distance === 2) return "text-[color-mix(in_srgb,var(--green)_70%,var(--subtext))]";
+  if (distance <= 4) return "text-[color-mix(in_srgb,var(--green)_45%,var(--subtext))]";
+  if (distance <= 7) return "text-[color-mix(in_srgb,var(--green)_25%,var(--subtext))]";
+  return undefined;
+}
+
 export function HexStream({
   data,
   active,
@@ -104,8 +119,14 @@ export function HexStream({
         aria-live="off"
       >
         {bytes.map((byte, index) => {
-          const isCurrent = active && byte.index === displayedByte;
+          const hasHead = active && displayedByte >= 0;
+          const isCurrent = hasHead && byte.index === displayedByte;
           const isHeader = hasMagicByte && byte.index === 0;
+          const playbackClass = hasHead && !isHeader
+            ? byte.index > displayedByte
+              ? UNPLAYED_CLASS
+              : trailClass(displayedByte - byte.index)
+            : undefined;
 
           return (
             <span
@@ -117,7 +138,7 @@ export function HexStream({
                 className={cn(
                   "inline-block w-[1.5em] text-center tabular-nums",
                   isHeader && "font-bold text-[var(--tv-accent)]",
-                  isCurrent && "font-bold text-[var(--green)]",
+                  playbackClass,
                 )}
               >
                 {byte.hex}

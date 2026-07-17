@@ -105,7 +105,7 @@ Appears below the PTT button only during recording. Real-time audio visualizatio
 "hold to talk · release to send" — shown when idle, hidden during recording.
 
 #### Incoming Voice Hex Stream
-While received audio is playing, show the packet as dense wrapped rows of two-character hexadecimal bytes, matching the Hex Sheet. Keep the codec header inline and highlighted with the accent color; light only the approximately current payload byte in green. The dump may auto-follow internally, but must not scroll the surrounding page.
+While received audio is playing, show the packet as dense wrapped rows of two-character hexadecimal bytes, matching the Hex Sheet. Keep the codec header inline and highlighted with the accent color. The approximately current payload byte is bold green with a soft glow and drags a short comet tail: the last few played bytes fade from green back to the resting text color. Unplayed bytes render dimmed; played bytes settle at the resting color. The dump may auto-follow internally, but must not scroll the surrounding page.
 
 #### Stats Strip
 4 equal-width stat cards in a row: Bytes Sent, Encode Time, Bytes Recv, Decode Time.
@@ -303,7 +303,7 @@ Side panel that slides in from the right. Shows raw byte data of voice packets.
 
 ## Hex Stream (Shared Component)
 
-Shows the loaded packet using the same dense one-byte raw dump as the Hex Sheet. The codec header remains inline and accented. During playback, a single approximately current payload byte turns green and the bounded dump auto-follows internally; while idle, the rows remain visible without a green byte. Do not add token pills, header badges, progress counters, glow boxes, or explanatory chrome.
+Shows the loaded packet using the same dense one-byte raw dump as the Hex Sheet. The codec header remains inline and accented. During playback, the approximately current payload byte is bold green with a soft text glow and drags a comet tail — roughly the last seven bytes fade from green back to the resting text color, unplayed bytes are dimmed, and played bytes settle at the resting color. The bounded dump auto-follows internally; while idle, the rows remain visible with no green byte and no dimming. Do not add token pills, header badges, progress counters, or explanatory chrome.
 
 ---
 
