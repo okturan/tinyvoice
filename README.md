@@ -4,6 +4,10 @@ TinyVoice is a browser-based push-to-talk and voice-QR experiment built around t
 
 [Live React app](https://tinyvoice.pages.dev/) · [Voice QR](https://tinyvoice.pages.dev/qr) · [Relay health](https://tinyvoice-relay.okan.workers.dev/health)
 
+![TinyVoice connected to a live synthetic push-to-talk room through the production relay](docs/tinyvoice-ptt.png)
+
+The capture above comes from the deployed application and production Worker relay. A synthetic `portfolio-demo` user joined the temporary `recruiter-proof` room, the lobby reported one live participant, and the browser disconnected immediately after capture. No codec model, microphone recording, personal identity, or private room was used.
+
 ## What it demonstrates
 
 - Browser-side neural audio inference with a shared WavLM encoder and quality-specific compressor/decoder models
@@ -45,6 +49,12 @@ The browser downloads the model artifacts, performs inference, and reconstructs 
 | Relay `/health` | Health response |
 | Relay `/rooms` | Active public-room list |
 | Relay `/ws/:room` | WebSocket room upgrade |
+
+### Voice QR interface
+
+![TinyVoice Voice QR recorder with three neural codec quality levels](docs/tinyvoice-voice-qr.png)
+
+The deployed QR route exposes the 12.5 Hz, 25 Hz, and 50 Hz codec options before any model download. Recording and decoding remain disabled until the user explicitly chooses the approximately 800 MB model pipeline described below.
 
 ## Wire format
 
