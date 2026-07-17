@@ -26,12 +26,15 @@ interface QRResultProps {
   packed: Uint8Array;
   duration: number;
   onHexOpen?: () => void;
+  /** Hide the inline token dump (layouts that keep bytes behind the Hex sheet) */
+  showHexStream?: boolean;
 }
 
 export default function QRResult({
   packed,
   duration,
   onHexOpen,
+  showHexStream = true,
 }: QRResultProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -134,6 +137,16 @@ export default function QRResult({
     a.download = "tinyvoice-qr.png";
     a.click();
   }, [qrDataUrl]);
+
+  const saveHex = useCallback(() => {
+    const blob = new Blob([formatHexBytes(packed) + "\n"], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tinyvoice-${packed.length}B.hex.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [packed]);
 
   const handleDecoderChange = useCallback((value: string) => {
     const q = value === "auto" ? null : (value as Quality);
@@ -313,6 +326,11 @@ export default function QRResult({
               : "Copy hex"}
         </Button>
 
+        <Button variant="outline" size="sm" onClick={saveHex}>
+          <DownloadIcon size={12} />
+          Save hex
+        </Button>
+
         <Button variant="outline" size="sm" onClick={downloadQR}>
           <DownloadIcon size={12} />
           Download
@@ -326,13 +344,15 @@ export default function QRResult({
         )}
       </div>
 
-      <HexStream
-        data={packed}
-        active={playing}
-        duration={audioBufferRef.current?.duration ?? duration}
-        label="Token data"
-        className="w-full"
-      />
+      {showHexStream && (
+        <HexStream
+          data={packed}
+          active={playing}
+          duration={audioBufferRef.current?.duration ?? duration}
+          label="Token data"
+          className="w-full"
+        />
+      )}
 
       {/* Decoder override */}
       <div className="flex flex-wrap items-center justify-center gap-1">

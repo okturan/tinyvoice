@@ -10,8 +10,15 @@ import { Progress } from "@/components/ui/progress";
 import { useThemeContext } from "@/contexts/ThemeContext";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useRoom } from "@/contexts/RoomContext";
+import { useLayoutEthos, type LayoutEthos } from "@/contexts/LayoutContext";
 import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
 import { ModelManagement } from "@/components/codec/ModelManagement";
+import { MicSettings } from "@/components/settings/MicSettings";
+
+const ETHOSES: { id: LayoutEthos; label: string; blurb: string }[] = [
+  { id: "stage-swap", label: "Stage Swap", blurb: "One stage at a time — results replace controls" },
+  { id: "split-deck", label: "Split Deck", blurb: "Controls dock left, results own the wide pane" },
+];
 
 interface SettingsSheetProps {
   open: boolean;
@@ -20,6 +27,7 @@ interface SettingsSheetProps {
 
 export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
   const { theme, setTheme, themes } = useThemeContext();
+  const { ethos, setEthos } = useLayoutEthos();
   const codec = useCodecContext();
   const room = useRoom();
   const savedUsername = room.username.trim();
@@ -65,6 +73,38 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                 : "Using anon"}
             </div>
           </div>
+
+          <Separator className="bg-[var(--surface0)]" />
+
+          {/* Layout ethos */}
+          <div>
+            <label className="text-[0.65rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold">
+              Layout
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
+              {ETHOSES.map(e => (
+                <button
+                  key={e.id}
+                  onClick={() => setEthos(e.id)}
+                  className={`flex flex-col gap-0.5 px-3 py-2.5 rounded-md text-left transition-colors cursor-pointer ${
+                    ethos === e.id
+                      ? "bg-[var(--surface0)] border border-[var(--surface1)]"
+                      : "hover:bg-[var(--surface0)]/50 border border-transparent"
+                  }`}
+                >
+                  <span className={`text-[0.7rem] font-semibold ${ethos === e.id ? "text-[var(--text)]" : "text-[var(--subtext)]"}`}>
+                    {e.label}
+                  </span>
+                  <span className="text-[0.58rem] leading-snug text-[var(--overlay)]">{e.blurb}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <Separator className="bg-[var(--surface0)]" />
+
+          {/* Microphone */}
+          <MicSettings />
 
           <Separator className="bg-[var(--surface0)]" />
 

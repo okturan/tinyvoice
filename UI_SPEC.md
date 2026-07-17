@@ -138,14 +138,27 @@ Appears automatically after encoding a voice message. Dialog with:
 
 ---
 
+## Layout Ethoses (Shared)
+
+The app has two design ethoses, chosen in the Settings panel and persisted:
+
+- **Stage Swap** (default) — one stage at a time. Producing a result swaps the whole canvas to it; a "← back" affordance returns to the controls. Nothing stacks, nothing scrolls.
+- **Split Deck** — controls dock into a compact left rail and the result owns a wide right pane, both always visible. The page widens to fit; on narrow screens it falls back to a stacked column.
+
+Both ethoses apply to the QR page's Record and Decode tabs. The PTT page is a split deck by construction (sidebar + main).
+
 ## QR Page
 
 ### Layout
-Single centered column, max-width ~520px. Tabbed interface: **Record** | **Decode**.
+Single centered card, max-width ~520px in Stage Swap and ~840px in Split Deck. Tabbed interface: **Record** | **Decode**. The card is fixed to the viewport; no inner scroll within a scroll.
 
 Default tab is Decode if the URL contains voice data (`?v=`), otherwise Record.
 
 ### Record Tab
+
+Stage Swap: the record stage shows quality, codec, and the HOLD button; encoding swaps the canvas to the result stage, headed by "← New recording" plus a quality/duration/bytes summary chip. Split Deck: quality, codec, and a smaller HOLD button stack in the rail; the result pane shows the QR card, or a dashed placeholder before the first take.
+
+A visible **"Trim lead-in silence"** toggle sits by the record button (persisted, default on). When on, dead silence before speech is cut ahead of encoding, keeping a ~120ms pre-roll. Encode success must not leave a status line behind in the codec card — the result view itself is the feedback.
 
 #### Quality Picker
 3 radio options in a segmented control:
@@ -197,8 +210,9 @@ Appears as a card below the record button:
 1. **Preview** — play/stop toggle. Shows ▶ "Preview" or ■ "Playing..." (playing state needs distinct visual). Decodes and plays the audio. Caches decoded audio for instant replay.
 2. **Copy URL** — copies shareable URL. Shows "Copied!" for 1.5s.
 3. **Copy hex** — copies the complete packet as lowercase, space-separated hexadecimal bytes.
-4. **Download** — downloads QR as PNG file.
-5. **Hex** — opens hex sheet sidebar showing raw bytes.
+4. **Save hex** — downloads the same hex bytes as a text file (round-trips through the Decode tab's hex input).
+5. **Download** — downloads QR as PNG file.
+6. **Hex** — opens hex sheet sidebar showing raw bytes.
 
 While Preview is playing, show the shared approximate hex stream for the full packet.
 
@@ -210,6 +224,8 @@ Label "Decoder:" + 4 small buttons: Auto | 12.5hz | 25hz | 50hz. Active button i
 ### Decode Tab
 
 The page itself is fixed to the viewport and must not scroll. A compact source switcher shows exactly one input method at a time: **Hex**, **Upload**, or **Camera**. The selected method may manage its own bounded overflow when necessary.
+
+Stage Swap: loading a packet swaps the canvas to the player, headed by "← New source" plus a bytes/quality summary chip. Split Deck: the source switcher lives in the left rail and the player owns the right pane (dashed placeholder until a packet loads).
 
 #### Hexadecimal Input
 A fixed-height multiline text input accepts a complete voice packet as hexadecimal bytes. It supports compact hex, whitespace/comma-separated bytes, and optional `0x` prefixes. Invalid characters, incomplete bytes, and data that is not a valid TinyVoice packet are reported beside the field. Cmd/Ctrl+Enter submits the input. After a valid submission, collapse the editor to a one-line byte summary with an Edit action.
@@ -237,7 +253,7 @@ Toggle button: "Start Camera" / "Stop Camera" (with camera icon).
 Error text, centered, shown when file/QR processing fails. Should be visually distinct as an error.
 
 #### Player (when voice data is loaded)
-Appears above the source switcher after successful hex entry, file drop, camera scan, or URL parameter decode. Keep it visible in the fixed decode layout so users never have to search below input cards.
+Appears after successful hex entry, file drop, camera scan, or URL parameter decode — placed per the active layout ethos (Stage Swap: replaces the source switcher; Split Deck: fills the right pane). Keep it visible in the fixed decode layout so users never have to search below input cards.
 
 **Play button:** large circle. Three visual states: idle, playing, loading. Each must be distinguishable. Icons: play triangle, stop square, or spinning indicator.
 
@@ -261,6 +277,14 @@ Slides in from the right edge. Used on both PTT and QR pages.
 
 #### Username
 Text input, monospace, persisted in localStorage.
+
+#### Layout
+Two-option picker for the layout ethos: **Stage Swap** | **Split Deck**, each with a one-line description. Persisted in localStorage; applies immediately.
+
+#### Microphone
+- **Input device** select (system default + enumerated inputs; device names appear once mic permission is granted).
+- **Gain** slider, 50%–300%, applied to the recording chain (and to the live test) — persisted.
+- **Test mic** button with a live level meter showing the post-gain peak level; the bar turns red and reads "clipping" above 95%. Testing stops on panel close.
 
 #### Codec Status
 Same dot + text + progress + button pattern. Shows current codec state.

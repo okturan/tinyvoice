@@ -9,9 +9,11 @@ interface QualityPickerProps {
   onChange: (quality: Quality) => void;
   /** Bump to trigger a cache re-check (e.g. after model download) */
   refreshKey?: number;
+  /** Stack options vertically (for narrow rail layouts) */
+  vertical?: boolean;
 }
 
-export default function QualityPicker({ value, onChange, refreshKey = 0 }: QualityPickerProps) {
+export default function QualityPicker({ value, onChange, refreshKey = 0, vertical = false }: QualityPickerProps) {
   const [cacheState, setCacheState] = useState<
     Record<Quality, boolean | undefined>
   >({
@@ -35,7 +37,7 @@ export default function QualityPicker({ value, onChange, refreshKey = 0 }: Quali
     <RadioGroup
       value={value}
       onValueChange={(v) => onChange(v as Quality)}
-      className="flex gap-1 rounded-lg bg-[var(--mantle)] p-0.5"
+      className={`flex gap-1 rounded-lg bg-[var(--mantle)] p-0.5 ${vertical ? "flex-col" : ""}`}
     >
       {QUALITY_OPTIONS.map((opt) => (
         <label

@@ -19,8 +19,10 @@ src/
     layout/             — TopBar, SettingsSheet, PageShell
     ptt/                — PTTButton, ActivityLog, HexDump, WaveformCanvas, ShareModal, StatsStrip, ConnectionPanel
     qr/                 — RecordPanel, DecodePanel, DecodePlayer, QRResult, QualityPicker, Dropzone, CameraScanner, HexSheet
+    qr/record/          — StageSwapRecord, SplitDeckRecord + shared pieces (QualityCard, CodecCard, RecordButton, TrimToggle)
     room/               — RoomLobby, RoomActiveCard, RoomInput, RoomList, RoomItem, UserTag
     codec/              — CodecStatus, ModelManagement, ModelLoadingCard
+    settings/           — MicSettings (device, gain, live level test)
     theme/              — ThemeSwitcher
     ui/                 — shadcn components + 15 itshover animated icons
   contexts/
@@ -28,8 +30,10 @@ src/
     RoomContext.tsx      — WebSocket rooms, join/leave, user list
     StatsContext.tsx     — Bytes sent/recv, encode/decode timing
     ThemeContext.tsx     — 6 themes with localStorage persistence
+    LayoutContext.tsx    — Layout ethos (stage-swap | split-deck), persisted
   hooks/
     useAudioRecorder.ts — AudioWorklet-based recording
+    useRecordFlow.ts    — QR record flow: mic/worklet recording, gain, silence trim, encode
     useAudioPlayer.ts   — AudioContext playback
     useWebSocket.ts     — WebSocket with reconnect
     useRooms.ts         — Room list polling

@@ -5,9 +5,11 @@ import { TopBar } from "@/components/layout/TopBar";
 import RecordPanel from "@/components/qr/RecordPanel";
 import DecodePanel from "@/components/qr/DecodePanel";
 import { decodeQRString } from "@/lib/qrParsing";
+import { useLayoutEthos } from "@/contexts/LayoutContext";
 
 export default function QRPage() {
   const [searchParams] = useSearchParams();
+  const { ethos } = useLayoutEthos();
   const voiceB64 = searchParams.get("v");
 
   const initialData = useMemo(() => {
@@ -19,7 +21,7 @@ export default function QRPage() {
 
   return (
     <div className="flex h-dvh items-center justify-center overflow-hidden bg-[var(--crust)] p-4 text-[var(--text)]">
-      <div className="mx-auto flex h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-[var(--surface0)] bg-[var(--base)]">
+      <div className={`mx-auto flex h-[calc(100dvh-2rem)] w-full ${ethos === "split-deck" ? "max-w-[840px]" : "max-w-[520px]"} flex-col overflow-hidden rounded-xl border border-[var(--surface0)] bg-[var(--base)]`}>
         <TopBar />
 
         <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
