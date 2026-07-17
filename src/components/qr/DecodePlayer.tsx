@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import HexSheet from "./HexSheet";
@@ -8,6 +8,7 @@ import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
 import { autoDecoderLabel, qualityLabel } from "@/lib/format";
 import CodeIcon from "@/components/ui/code-icon";
+import { HexStream } from "@/components/audio/HexStream";
 
 const QUALITY_BTNS: { label: string; value: string }[] = [
   { label: "Auto", value: "auto" },
@@ -18,9 +19,13 @@ const QUALITY_BTNS: { label: string; value: string }[] = [
 
 interface DecodePlayerProps {
   parsed: ParsedPacket;
+  packetBytes: Uint8Array;
 }
 
-export default function DecodePlayer({ parsed }: DecodePlayerProps) {
+export default function DecodePlayer({
+  parsed,
+  packetBytes,
+}: DecodePlayerProps) {
   const codecContext = useCodecContext();
   const [qualityOverride, setQualityOverride] = useState<Quality | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,6 +38,7 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playCtxRef = useRef<AudioContext | null>(null);
+  const playbackGenerationRef = useRef(0);
 
   const tokenCount = parsed.tokenBytes.length / 2;
   const effectiveQuality = qualityOverride || parsed.quality;
@@ -42,59 +48,106 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
   const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
   const autoLabel = autoDecoderLabel(parsed.quality, parsed.hasMagicByte);
 
-  const initialStatus = `${parsed.tokenBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${qualityLabel(parsed.quality)}${parsed.hasMagicByte ? "" : " (legacy fallback)"}`;
+  const initialStatus = `${packetBytes.length}B, ${tokenCount} tok, ~${estDuration.toFixed(1)}s \u00b7 ${qualityLabel(parsed.quality)}${parsed.hasMagicByte ? "" : " (legacy fallback)"}`;
+
+  const stopPlayback = useCallback(() => {
+    const source = sourceRef.current;
+    if (!source) return;
+    sourceRef.current = null;
+    source.onended = null;
+    try {
+      source.stop();
+    } catch {
+      // The source may already have ended.
+    }
+    source.disconnect();
+  }, []);
+
+  useEffect(() => {
+    playbackGenerationRef.current += 1;
+    stopPlayback();
+    audioBufferRef.current = null;
+    setIsPlaying(false);
+    setIsLoading(false);
+    setProgress(0);
+    setStatus("");
+    setStatusType("");
+
+    return () => {
+      playbackGenerationRef.current += 1;
+      stopPlayback();
+    };
+  }, [packetBytes, stopPlayback]);
+
+  useEffect(() => {
+    return () => {
+      const context = playCtxRef.current;
+      playCtxRef.current = null;
+      if (context && context.state !== "closed") void context.close();
+    };
+  }, []);
 
   const handleQualityChange = useCallback(
     (q: string) => {
       const newQ = q === "auto" ? null : (q as Quality);
+      playbackGenerationRef.current += 1;
+      stopPlayback();
       setQualityOverride(newQ);
       audioBufferRef.current = null;
+      setIsPlaying(false);
+      setIsLoading(false);
+      setProgress(0);
       setStatus(
         `Decoder set to ${newQ ? qualityLabel(newQ) : autoLabel}`,
       );
       setStatusType("");
     },
-    [autoLabel],
+    [autoLabel, stopPlayback],
   );
 
   const handlePlay = useCallback(async () => {
-    if (isPlaying && sourceRef.current) {
-      try {
-        sourceRef.current.stop();
-      } catch {
-        // ignore
-      }
-      sourceRef.current = null;
+    if (sourceRef.current) {
+      playbackGenerationRef.current += 1;
+      stopPlayback();
       setIsPlaying(false);
       return;
     }
 
-    if (audioBufferRef.current) {
-      if (!playCtxRef.current || playCtxRef.current.state === "closed") {
-        playCtxRef.current = new AudioContext({ sampleRate: SR });
-      }
-      if (playCtxRef.current.state === "suspended") {
-        await playCtxRef.current.resume();
-      }
-      const src = playCtxRef.current.createBufferSource();
-      src.buffer = audioBufferRef.current;
-      src.connect(playCtxRef.current.destination);
-      sourceRef.current = src;
-      setIsPlaying(true);
-      src.onended = () => {
-        setIsPlaying(false);
-        sourceRef.current = null;
-      };
-      src.start();
-      return;
-    }
+    const generation = ++playbackGenerationRef.current;
+    const isCurrent = () => playbackGenerationRef.current === generation;
+    const cachedBuffer = audioBufferRef.current;
 
     try {
+      if (cachedBuffer) {
+        if (!playCtxRef.current || playCtxRef.current.state === "closed") {
+          playCtxRef.current = new AudioContext({ sampleRate: SR });
+        }
+        if (playCtxRef.current.state === "suspended") {
+          await playCtxRef.current.resume();
+        }
+        if (!isCurrent()) return;
+
+        const src = playCtxRef.current.createBufferSource();
+        src.buffer = cachedBuffer;
+        src.connect(playCtxRef.current.destination);
+        sourceRef.current = src;
+        setIsPlaying(true);
+        src.onended = () => {
+          src.disconnect();
+          if (!isCurrent() || sourceRef.current !== src) return;
+          sourceRef.current = null;
+          setIsPlaying(false);
+        };
+        src.start();
+        return;
+      }
+
       const q = effectiveQuality;
       if (!codecContext.isQualityLoaded(q)) {
         setStatusType("");
         setStatus(`Downloading ${effectiveQualityLabel} models...`);
         const ok = await codecContext.loadModels(q);
+        if (!isCurrent()) return;
         if (!ok) {
           setStatus("Download cancelled");
           return;
@@ -107,13 +160,22 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
         tokenCount,
         q,
         (info) => {
+          if (!isCurrent()) return;
           setProgress(info.fraction * 100);
           setStatus(info.status);
           setStatusType("");
         },
       );
+      if (!isCurrent()) return;
 
-      playCtxRef.current = new AudioContext({ sampleRate: SR });
+      if (!playCtxRef.current || playCtxRef.current.state === "closed") {
+        playCtxRef.current = new AudioContext({ sampleRate: SR });
+      }
+      if (playCtxRef.current.state === "suspended") {
+        await playCtxRef.current.resume();
+      }
+      if (!isCurrent()) return;
+
       const buf = playCtxRef.current.createBuffer(1, audio.length, SR);
       buf.getChannelData(0).set(audio);
       audioBufferRef.current = buf;
@@ -126,19 +188,33 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
       setIsLoading(false);
       setStatusType("ok");
       setStatus(
-        `${(audio.length / SR).toFixed(1)}s decoded from ${parsed.tokenBytes.length} bytes`,
+        `${(audio.length / SR).toFixed(1)}s decoded from ${packetBytes.length} bytes`,
       );
       src.onended = () => {
-        setIsPlaying(false);
+        src.disconnect();
+        if (!isCurrent() || sourceRef.current !== src) return;
         sourceRef.current = null;
+        setIsPlaying(false);
       };
       src.start();
     } catch (e) {
+      if (!isCurrent()) return;
+      stopPlayback();
       setStatusType("err");
       setStatus((e as Error).message);
+      setIsPlaying(false);
       setIsLoading(false);
     }
-  }, [isPlaying, effectiveQuality, effectiveQualityLabel, parsed, tokenCount, codecContext]);
+  }, [
+    isPlaying,
+    effectiveQuality,
+    effectiveQualityLabel,
+    parsed.tokenBytes,
+    packetBytes.length,
+    tokenCount,
+    codecContext,
+    stopPlayback,
+  ]);
 
   const handleDownloadModels = useCallback(async () => {
     setStatusType("");
@@ -161,6 +237,13 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
           }`}
           onClick={handlePlay}
           disabled={isLoading || loadingModels}
+          aria-label={
+            isLoading
+              ? "Decoding voice packet"
+              : isPlaying
+                ? "Stop voice playback"
+                : "Play voice packet"
+          }
         >
           {isLoading ? (
             <svg
@@ -216,6 +299,15 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
         </Button>
       </div>
 
+      <HexStream
+        data={packetBytes}
+        active={isPlaying}
+        duration={audioBufferRef.current?.duration ?? estDuration}
+        label="Token data"
+        className="mb-3"
+        hasMagicByte={parsed.hasMagicByte}
+      />
+
       {!qualityReady && (
         <Button
           className="mb-3"
@@ -270,9 +362,10 @@ export default function DecodePlayer({ parsed }: DecodePlayerProps) {
 
       {/* Hex Sheet */}
       <HexSheet
-        data={parsed.tokenBytes}
+        data={packetBytes}
         open={hexOpen}
         onOpenChange={setHexOpen}
+        hasMagicByte={parsed.hasMagicByte}
       />
     </div>
   );

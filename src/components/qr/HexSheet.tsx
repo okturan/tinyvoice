@@ -11,9 +11,15 @@ interface HexSheetProps {
   data: Uint8Array | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  hasMagicByte?: boolean;
 }
 
-export default function HexSheet({ data, open, onOpenChange }: HexSheetProps) {
+export default function HexSheet({
+  data,
+  open,
+  onOpenChange,
+  hasMagicByte = true,
+}: HexSheetProps) {
   if (!data) return null;
 
   return (
@@ -36,7 +42,7 @@ export default function HexSheet({ data, open, onOpenChange }: HexSheetProps) {
               <span key={i}>
                 <span
                   className={`inline-block w-[1.5em] text-center ${
-                    i === 0
+                    i === 0 && hasMagicByte
                       ? "text-[var(--tv-accent)] font-bold"
                       : "text-[var(--subtext)]"
                   }`}

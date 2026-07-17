@@ -18,23 +18,26 @@ export default function QRPage() {
   const defaultTab = voiceB64 ? "decode" : "record";
 
   return (
-    <div className="min-h-screen bg-[var(--crust)] text-[var(--text)] flex items-center justify-center p-4">
-      <div className="w-full max-w-[520px] flex flex-col max-h-[calc(100vh-2rem)] mx-auto my-auto rounded-xl border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
+    <div className="flex h-dvh items-center justify-center overflow-hidden bg-[var(--crust)] p-4 text-[var(--text)]">
+      <div className="mx-auto flex h-[calc(100dvh-2rem)] w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-[var(--surface0)] bg-[var(--base)]">
         <TopBar />
 
-        <div className="flex-1 px-4 py-4">
-          <Tabs defaultValue={defaultTab}>
-            <TabsList className="mb-4 grid w-full grid-cols-2 bg-[var(--mantle)]">
+        <div className="min-h-0 flex-1 overflow-hidden px-4 py-4">
+          <Tabs defaultValue={defaultTab} className="h-full min-h-0">
+            <TabsList className="mb-1 grid w-full flex-shrink-0 grid-cols-2 bg-[var(--mantle)]">
               <TabsTrigger value="record">Record</TabsTrigger>
               <TabsTrigger value="decode">Decode</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="record" className="mt-0">
+            <TabsContent value="record" className="mt-0 min-h-0 overflow-y-auto">
               <RecordPanel />
             </TabsContent>
 
-            <TabsContent value="decode" className="mt-0">
-              <DecodePanel initialData={initialData} />
+            <TabsContent value="decode" className="mt-0 min-h-0 overflow-hidden">
+              <DecodePanel
+                key={voiceB64 ?? "manual"}
+                initialData={initialData}
+              />
             </TabsContent>
           </Tabs>
         </div>

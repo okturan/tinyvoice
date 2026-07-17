@@ -104,6 +104,9 @@ Appears below the PTT button only during recording. Real-time audio visualizatio
 #### Hint Text
 "hold to talk · release to send" — shown when idle, hidden during recording.
 
+#### Incoming Voice Hex Stream
+While received audio is playing, show the packet as dense wrapped rows of two-character hexadecimal bytes, matching the Hex Sheet. Keep the codec header inline and highlighted with the accent color; light only the approximately current payload byte in green. The dump may auto-follow internally, but must not scroll the surrounding page.
+
 #### Stats Strip
 4 equal-width stat cards in a row: Bytes Sent, Encode Time, Bytes Recv, Decode Time.
 
@@ -193,8 +196,11 @@ Appears as a card below the record button:
 **Action buttons** (row, wrapping):
 1. **Preview** — play/stop toggle. Shows ▶ "Preview" or ■ "Playing..." (playing state needs distinct visual). Decodes and plays the audio. Caches decoded audio for instant replay.
 2. **Copy URL** — copies shareable URL. Shows "Copied!" for 1.5s.
-3. **Download** — downloads QR as PNG file.
-4. **Hex** — opens hex sheet sidebar showing raw bytes.
+3. **Copy hex** — copies the complete packet as lowercase, space-separated hexadecimal bytes.
+4. **Download** — downloads QR as PNG file.
+5. **Hex** — opens hex sheet sidebar showing raw bytes.
+
+While Preview is playing, show the shared approximate hex stream for the full packet.
 
 **Decoder override** (row below actions):
 Label "Decoder:" + 4 small buttons: Auto | 12.5hz | 25hz | 50hz. Active button is highlighted. Switching decoder clears cached audio, forcing re-decode on next Preview. This lets users intentionally decode with a mismatched model to hear the artifacts.
@@ -202,6 +208,11 @@ Label "Decoder:" + 4 small buttons: Auto | 12.5hz | 25hz | 50hz. Active button i
 **Preview status:** small text showing decode progress or errors.
 
 ### Decode Tab
+
+The page itself is fixed to the viewport and must not scroll. A compact source switcher shows exactly one input method at a time: **Hex**, **Upload**, or **Camera**. The selected method may manage its own bounded overflow when necessary.
+
+#### Hexadecimal Input
+A fixed-height multiline text input accepts a complete voice packet as hexadecimal bytes. It supports compact hex, whitespace/comma-separated bytes, and optional `0x` prefixes. Invalid characters, incomplete bytes, and data that is not a valid TinyVoice packet are reported beside the field. Cmd/Ctrl+Enter submits the input. After a valid submission, collapse the editor to a one-line byte summary with an Edit action.
 
 #### Dropzone
 Dashed-border rectangular area. Accepts:
@@ -226,7 +237,7 @@ Toggle button: "Start Camera" / "Stop Camera" (with camera icon).
 Error text, centered, shown when file/QR processing fails. Should be visually distinct as an error.
 
 #### Player (when voice data is loaded)
-Appears after successful file drop, camera scan, or URL parameter decode.
+Appears above the source switcher after successful hex entry, file drop, camera scan, or URL parameter decode. Keep it visible in the fixed decode layout so users never have to search below input cards.
 
 **Play button:** large circle. Three visual states: idle, playing, loading. Each must be distinguishable. Icons: play triangle, stop square, or spinning indicator.
 
@@ -237,6 +248,8 @@ Appears after successful file drop, camera scan, or URL parameter decode.
 **Progress bar:** visible during decode.
 
 **Status text:** shows packet info (size, token count, estimated duration, detected quality). If a legacy packet has no magic byte, shows the explicit 50 Hz legacy fallback. Updates during decode with progress messages.
+
+While audio is playing, show the shared approximate hex stream using the original full packet, including its codec header when present.
 
 ---
 
@@ -286,7 +299,11 @@ Side panel that slides in from the right. Shows raw byte data of voice packets.
 
 - Title: "Token Data"
 - Subtitle: "{N} bytes · raw hex dump"
-- Content: monospace hex dump, each byte as 2-char hex. First byte (magic byte / codec identifier) should be visually highlighted vs the rest.
+- Content: monospace hex dump, each byte as 2-char hex. Highlight the first byte when a magic byte / codec identifier is present; legacy headerless packets have no highlighted header.
+
+## Hex Stream (Shared Component)
+
+Shows the loaded packet using the same dense one-byte raw dump as the Hex Sheet. The codec header remains inline and accented. During playback, a single approximately current payload byte turns green and the bounded dump auto-follows internally; while idle, the rows remain visible without a green byte. Do not add token pills, header badges, progress counters, glow boxes, or explanatory chrome.
 
 ---
 

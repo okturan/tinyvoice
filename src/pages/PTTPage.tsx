@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { HexDump } from "@/components/ptt/HexDump";
+import { HexStream } from "@/components/audio/HexStream";
 import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
 import { ModelManagement } from "@/components/codec/ModelManagement";
 import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
@@ -26,6 +27,12 @@ interface LogEntry {
   type: "ok" | "info" | "warn" | "dim" | "recv" | "name";
   hexData?: Uint8Array;
   hexType?: "sent" | "recv";
+}
+
+interface HexPlayback {
+  id: number;
+  packet: Uint8Array;
+  duration: number;
 }
 
 const LOG_COLORS: Record<LogEntry["type"], string> = {
@@ -44,7 +51,7 @@ export function PTTPage() {
   const stats = useStats();
   const room = useRoom();
   const recorder = useAudioRecorder();
-  const player = useAudioPlayer();
+  const { play: playAudioSamples, stop: stopAudioPlayback } = useAudioPlayer();
 
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [pttState, setPttState] = useState<PTTState>("disabled");
@@ -52,10 +59,30 @@ export function PTTPage() {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [openHexIds, setOpenHexIds] = useState<Set<number>>(() => new Set());
+  const [hexPlayback, setHexPlayback] = useState<HexPlayback | null>(null);
 
   const logEndRef = useRef<HTMLDivElement>(null);
+  const playbackIdRef = useRef(0);
+  const playbackQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const playbackGenerationRef = useRef(0);
+  const mountedRef = useRef(true);
   const isPttReady = codec.modelsLoaded && room.isConnected;
   const savedUsername = room.username.trim();
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      playbackGenerationRef.current += 1;
+      stopAudioPlayback();
+    };
+  }, [stopAudioPlayback]);
+
+  useEffect(() => {
+    playbackGenerationRef.current += 1;
+    stopAudioPlayback();
+    setHexPlayback(null);
+  }, [room.isConnected, room.currentRoom, stopAudioPlayback]);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "dim", hexData?: Uint8Array, hexType?: "sent" | "recv") => {
     setLogEntries(prev => {
@@ -97,22 +124,47 @@ export function PTTPage() {
   }, [room.isConnected, room.userCount, stats, addLog]);
 
   // ── Decode incoming ──
-  const handleDecode = useCallback(async (data: ArrayBuffer) => {
+  const handleDecode = useCallback((data: ArrayBuffer) => {
     const packet = new Uint8Array(data);
+    const generation = playbackGenerationRef.current;
     stats.addRecv(packet.length);
     stats.setLastRecv(packet.length);
     addLog(`Received ${fmt(packet.length)}`, "recv", packet, "recv");
-    try {
-      const t0 = performance.now();
-      const audio = await codec.decode(packet);
-      const dt = (performance.now() - t0) / 1000;
-      addLog(`Decoded ${dt.toFixed(2)}s \u2192 ${(audio.length / SR).toFixed(1)}s audio`, "ok");
-      stats.setDecodeTime(dt);
-      await player.play(audio);
-    } catch (e) {
-      addLog("Decode: " + (e instanceof Error ? e.message : String(e)), "warn");
-    }
-  }, [codec, stats, player, addLog]);
+
+    const job = playbackQueueRef.current.then(async () => {
+      const isCurrent = () =>
+        mountedRef.current && playbackGenerationRef.current === generation;
+      if (!isCurrent()) return;
+
+      try {
+        const t0 = performance.now();
+        const audio = await codec.decode(packet);
+        if (!isCurrent()) return;
+        const dt = (performance.now() - t0) / 1000;
+        addLog(`Decoded ${dt.toFixed(2)}s \u2192 ${(audio.length / SR).toFixed(1)}s audio`, "ok");
+        stats.setDecodeTime(dt);
+        const playbackId = ++playbackIdRef.current;
+        setHexPlayback({
+          id: playbackId,
+          packet,
+          duration: audio.length / SR,
+        });
+        try {
+          await playAudioSamples(audio);
+        } finally {
+          if (isCurrent()) {
+            setHexPlayback((current) => current?.id === playbackId ? null : current);
+          }
+        }
+      } catch (e) {
+        if (isCurrent()) {
+          addLog("Decode: " + (e instanceof Error ? e.message : String(e)), "warn");
+        }
+      }
+    });
+
+    playbackQueueRef.current = job.catch(() => {});
+  }, [codec, stats, playAudioSamples, addLog]);
 
   useEffect(() => room.onPacketReceived(handleDecode), [room, handleDecode]);
 
@@ -337,6 +389,17 @@ export function PTTPage() {
                   <p className="text-[0.7rem] text-[var(--overlay)] mt-2">hold to talk &middot; release to send</p>
                 )}
               </div>
+
+              {hexPlayback && (
+                <div className="px-4 pb-3 flex-shrink-0">
+                  <HexStream
+                    data={hexPlayback.packet}
+                    active
+                    duration={hexPlayback.duration}
+                    label="Token data"
+                  />
+                </div>
+              )}
 
               {/* Stats strip */}
               <div className="grid grid-cols-4 gap-1.5 px-4 flex-shrink-0">
