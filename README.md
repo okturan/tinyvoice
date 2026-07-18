@@ -181,4 +181,9 @@ Deployment is intentionally separate from CI. Pull requests validate configurati
 - [Cloudflare Workers and Durable Objects](https://developers.cloudflare.com/durable-objects/)
 - [Meshtastic](https://meshtastic.org/) as the low-bandwidth experimentation inspiration
 
-This repository currently has no project-level `LICENSE` file. Dependency, upstream model, and upstream project licenses remain separate; inspect them before redistribution or commercial use.
+## License
+
+Original TinyVoice application code, Worker code, and documentation are
+available under the [MIT License](./LICENSE). FocalCodec, ONNX Runtime,
+downloaded model artifacts, and other upstream components remain subject to
+their own licenses and terms.
