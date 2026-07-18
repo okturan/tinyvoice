@@ -174,6 +174,13 @@ npm run deploy:worker   # deploy the Worker
 
 Deployment is intentionally separate from CI. Pull requests validate configuration and produce a Worker dry-run bundle but do not deploy or create a release.
 
+## Security
+
+Report room-isolation, packet-validation, model-integrity, injection, or privacy
+vulnerabilities through [GitHub private vulnerability reporting](./SECURITY.md).
+Use synthetic audio or codec packets and a room you control when reproducing an
+issue.
+
 ## Credits and provenance
 
 - [FocalCodec](https://github.com/lucadellalib/focalcodec) by Luca Della Libera
