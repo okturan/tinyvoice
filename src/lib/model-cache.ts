@@ -136,6 +136,50 @@ export async function getAllCachedKeys(): Promise<string[]> {
   });
 }
 
+/**
+ * Delete cached blobs left behind by a previous MODEL_REVISION.
+ *
+ * Bumping MODEL_REVISION re-prefixes cache keys, so old-revision blobs
+ * become invisible to the app (getAllCachedKeys filters to the current
+ * prefix) yet keep occupying ~600MB–1.2GB of IndexedDB. This sweep
+ * removes anything not on the current prefix so revision bumps clean up
+ * after themselves without needing a DB_VERSION change. Best-effort:
+ * resolves with the number of orphaned entries removed, 0 on any error.
+ */
+export async function pruneStaleRevisions(): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0;
+  let db: IDBDatabase;
+  try {
+    db = await openDB();
+  } catch {
+    return 0;
+  }
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAllKeys();
+    let staleCount = 0;
+    req.onsuccess = () => {
+      const stale = selectStaleKeys(req.result as string[]);
+      staleCount = stale.length;
+      for (const key of stale) store.delete(key);
+    };
+    req.onerror = () => resolve(0);
+    tx.oncomplete = () => resolve(staleCount);
+    tx.onerror = () => resolve(0);
+    tx.onabort = () => resolve(0);
+  });
+}
+
+/**
+ * Given every key in the store, return the ones belonging to a previous
+ * model revision (safe to delete). Pure so the delete decision — the
+ * part where a prefix bug could wipe live models — is unit-testable.
+ */
+export function selectStaleKeys(allKeys: string[]): string[] {
+  return allKeys.filter((key) => !key.startsWith(CACHE_PREFIX));
+}
+
 function cacheKey(key: string): string {
   return `${CACHE_PREFIX}${key}`;
 }

@@ -9,7 +9,7 @@ import {
 } from "react";
 import { codec } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
-import { clearModelCache as clearCache } from "@/lib/model-cache";
+import { clearModelCache as clearCache, pruneStaleRevisions } from "@/lib/model-cache";
 import { qualityLabel } from "@/lib/format";
 
 export type CodecState = "idle" | "loading" | "ready" | "error";
@@ -79,8 +79,9 @@ export function CodecProvider({ children }: { children: ReactNode }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastProgressUpdate = useRef(0);
 
-  // Check if core models are already cached in IndexedDB on mount
+  // Reclaim storage from previous model revisions, then check the cache.
   useEffect(() => {
+    void pruneStaleRevisions();
     codec.isCoreModelsCached().then((cached) => {
       if (cached) {
         setModelsCached(true);
