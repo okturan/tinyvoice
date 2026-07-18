@@ -1,0 +1,2 @@
+# Wrangler's generated header currently includes a trailing space.
+worker/worker-configuration.d.ts -whitespace
