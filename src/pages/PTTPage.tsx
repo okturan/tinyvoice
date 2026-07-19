@@ -16,6 +16,8 @@ import { WaveformCanvas } from "@/components/ptt/WaveformCanvas";
 import { ModelDownloadDialog } from "@/components/codec/ModelDownloadDialog";
 import { SettingsSheet } from "@/components/layout/SettingsSheet";
 import { codec as codecService } from "@/lib/codec-service";
+import { trimLeadingSilence } from "@/lib/audio/trim";
+import { getTrimSilence } from "@/lib/mic-settings";
 import { Quality } from "@/types/codec";
 import { QUALITY_OPTIONS, SR, SUGGESTED_ROOMS } from "@/lib/constants";
 import { randomRoomName } from "@/lib/utils/names";
@@ -261,12 +263,19 @@ export function PTTPage() {
 
   const handleUp = useCallback(async () => {
     if (!recorder.isRecording) return;
-    const audio = recorder.stopRecording();
-    if (!audio) { addLog("Too short", "dim"); setPttState("idle"); return; }
+    const recorded = recorder.stopRecording();
+    if (!recorded) { addLog("Too short", "dim"); setPttState("idle"); return; }
     setPttState("encoding");
     await new Promise(r => setTimeout(r, 50));
+    // Same persisted trim setting as the QR record surface.
+    const audio = getTrimSilence() ? trimLeadingSilence(recorded, SR) : recorded;
+    if (audio.length < 4096) { addLog("Too short", "dim"); setPttState("idle"); return; }
+    const trimmedSec = (recorded.length - audio.length) / SR;
     const duration = audio.length / SR;
-    addLog(`${duration.toFixed(1)}s recorded`, "info");
+    addLog(
+      `${duration.toFixed(1)}s recorded${trimmedSec > 0.05 ? ` (trimmed ${trimmedSec.toFixed(1)}s lead-in)` : ""}`,
+      "info",
+    );
     try {
       const t0 = performance.now();
       const packet = await codec.encode(audio, effectiveQuality ?? undefined);

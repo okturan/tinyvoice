@@ -98,6 +98,10 @@ function isStoredRoom(value: unknown): value is StoredRoom {
 function isCodecPacket(payload: ArrayBuffer): boolean {
   const bytes = new Uint8Array(payload);
   if (bytes.byteLength < 2) return false;
+  // 0xFE is reserved for the server→client sender wrap; refusing it at
+  // ingress keeps the wrap marker unambiguous on the wire. Real token
+  // streams never start with it (tokens are far below 0xFE00).
+  if (bytes[0] === RELAY_WRAP_MARKER) return false;
   if (bytes.byteLength % 2 === 0) return true;
   return bytes.byteLength >= 3 && bytes[0] !== undefined && bytes[0] >= 1 && bytes[0] <= 3;
 }

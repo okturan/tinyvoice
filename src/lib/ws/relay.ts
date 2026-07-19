@@ -66,7 +66,11 @@ export interface LobbyRoom {
 
 // ── Relay payload wrapping ─────────────────────────────
 
-/** Server→client packets are wrapped: [0xFE][nameLen][sender utf8][packet] */
+/**
+ * Server→client packets are wrapped: [0xFE][nameLen][sender utf8][packet].
+ * 0xFE is reserved on the wire — the relay rejects client packets that
+ * start with it — so a leading 0xFE unambiguously means "wrapped".
+ */
 export const RELAY_WRAP_MARKER = 0xfe;
 
 export function unwrapRelayPayload(data: ArrayBuffer): {

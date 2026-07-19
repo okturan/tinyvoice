@@ -30,6 +30,19 @@ describe("trimLeadingSilence", () => {
     expect(trimmed.length).toBeLessThanOrEqual(expected + 0.03 * SR);
   });
 
+  it("cuts a short lead-in before a long take", () => {
+    // 0.4s of silence before 3s of speech: the silent windows are only
+    // ~12% of the clip, so a floor sampled at the 25th percentile would
+    // land inside speech and inflate the threshold past it (the
+    // "still some silentish lead-in" bug). The 10th percentile stays in
+    // the silence.
+    const audio = concat(new Float32Array(Math.round(0.4 * SR)), tone(3, 0.3));
+    const trimmed = trimLeadingSilence(audio, SR);
+    const expected = 3 * SR + 0.1 * SR;
+    expect(trimmed.length).toBeGreaterThanOrEqual(expected - 0.03 * SR);
+    expect(trimmed.length).toBeLessThanOrEqual(expected + 0.03 * SR);
+  });
+
   it("cuts 'silentish' lead-in room tone above the fixed floor", () => {
     // Room tone at 0.05 amplitude would fool a fixed 0.015 gate; the
     // adaptive gate keys off the recording's own noise floor.

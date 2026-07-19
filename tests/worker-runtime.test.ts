@@ -287,6 +287,13 @@ describe("Room WebSocket Durable Object", () => {
     const invalidClose = nextClose(invalid.socket);
     invalid.socket.send(new Uint8Array([9, 1, 0]).buffer);
     expect((await invalidClose).code).toBe(1003);
+
+    // 0xFE is reserved for the sender wrap; even a well-formed
+    // even-length payload starting with it must be refused at ingress.
+    const reserved = await openSocket("reserved-marker");
+    const reservedClose = nextClose(reserved.socket);
+    reserved.socket.send(new Uint8Array([0xfe, 3, 65, 100]).buffer);
+    expect((await reservedClose).code).toBe(1003);
     receiver.socket.close(1000, "done");
   });
 

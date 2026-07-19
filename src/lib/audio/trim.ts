@@ -3,10 +3,11 @@
  *
  * The gate is noise-floor adaptive: a fixed threshold lets "silentish"
  * room tone through, so instead we estimate the recording's own floor
- * (25th-percentile window RMS) and require windows to clear
- * max(minThreshold, floorMultiplier × floor) for a few consecutive
- * windows before calling it speech. A short pre-roll is kept so the
- * attack isn't clipped.
+ * (10th-percentile window RMS — low enough that even a sub-second
+ * lead-in before a long take still samples the silence, not the speech)
+ * and require windows to clear max(minThreshold, floorMultiplier × floor)
+ * for a few consecutive windows before calling it speech. A short
+ * pre-roll is kept so the attack isn't clipped.
  */
 export function trimLeadingSilence(
   samples: Float32Array,
@@ -32,7 +33,7 @@ export function trimLeadingSilence(
   }
 
   const sorted = Float64Array.from(rms).sort();
-  const noiseFloor = sorted[Math.floor(sorted.length * 0.25)];
+  const noiseFloor = sorted[Math.floor(sorted.length * 0.1)];
   const threshold = Math.max(minThreshold, noiseFloor * floorMultiplier);
 
   let firstVoiced = -1;

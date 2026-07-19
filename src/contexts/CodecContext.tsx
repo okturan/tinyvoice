@@ -4,6 +4,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
@@ -184,25 +185,45 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     setModelsCached(false);
   }, []);
 
+  // Memoized so consumers can safely put the context value in effect
+  // dependencies without the effect re-running every provider render.
+  const value = useMemo<CodecContextValue>(
+    () => ({
+      state,
+      statusText,
+      progress,
+      modelsLoaded,
+      modelsCached,
+      loadedQualities,
+      activeQuality,
+      setActiveQuality,
+      isQualityLoaded,
+      loadModels,
+      abortLoading,
+      clearModelCache: clearModelCacheFn,
+      encode,
+      decode,
+    }),
+    [
+      state,
+      statusText,
+      progress,
+      modelsLoaded,
+      modelsCached,
+      loadedQualities,
+      activeQuality,
+      setActiveQuality,
+      isQualityLoaded,
+      loadModels,
+      abortLoading,
+      clearModelCacheFn,
+      encode,
+      decode,
+    ],
+  );
+
   return (
-    <CodecContext.Provider
-      value={{
-        state,
-        statusText,
-        progress,
-        modelsLoaded,
-        modelsCached,
-        loadedQualities,
-        activeQuality,
-        setActiveQuality,
-        isQualityLoaded,
-        loadModels,
-        abortLoading,
-        clearModelCache: clearModelCacheFn,
-        encode,
-        decode,
-      }}
-    >
+    <CodecContext.Provider value={value}>
       {children}
     </CodecContext.Provider>
   );
