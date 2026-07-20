@@ -13,7 +13,7 @@ React 19 + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui. Cloudflare Pages (fr
 ```
 src/
   pages/
-    PTTPage.tsx         — Main PTT app (two-pane: sidebar + main)
+    PTTPage.tsx         — Main PTT app (ethos-aware: split-deck two-pane, or stage-swap lobby/room "thumb dock")
     QRPage.tsx          — Voice QR tool (tabs: Record / Decode)
   components/
     layout/             — TopBar, SettingsSheet, PageShell

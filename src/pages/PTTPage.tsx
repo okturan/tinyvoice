@@ -5,6 +5,7 @@ import GearIcon from "@/components/ui/gear-icon";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
 import { useRoom } from "@/contexts/RoomContext";
+import { useLayoutEthos } from "@/contexts/LayoutContext";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useAudioPlayer } from "@/hooks/useAudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -55,6 +56,7 @@ export function PTTPage() {
   const codec = useCodecContext();
   const stats = useStats();
   const room = useRoom();
+  const { ethos } = useLayoutEthos();
   const recorder = useAudioRecorder();
   const { play: playAudioSamples, stop: stopAudioPlayback } = useAudioPlayer();
 
@@ -349,10 +351,226 @@ export function PTTPage() {
     setNewRoomQuality(null);
   };
 
+  // ── Shared render blocks (used by both layout ethoses) ──
+  const usernameBlock = (
+    <div>
+      <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">You</div>
+      <input type="text" spellCheck={false} value={room.username} onChange={e => handleUsernameChange(e.target.value)}
+        maxLength={64} placeholder="your name" className="w-full px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
+      <div className="mt-1 text-[0.6rem] text-[var(--overlay)]">
+        {savedUsername
+          ? room.isConnected ? `Visible as ${savedUsername}` : `Saved as ${savedUsername}`
+          : "Using anon"}
+      </div>
+    </div>
+  );
+
+  const roomJoinBlock = (
+    <div>
+      <div className="flex gap-1 mb-2">
+        <input type="text" spellCheck={false} autoComplete="off" placeholder="room name"
+          maxLength={128} value={roomInput} onChange={e => { setRoomInput(e.target.value); setNewRoomQuality(null); }} onKeyDown={e => e.key === "Enter" && canJoinTyped && handleJoin()}
+          className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
+        <button onClick={() => handleJoin()} disabled={!canJoinTyped}
+          title={isNewRoom && !newRoomQuality ? "Pick a codec for the new room first" : "Join"}
+          className="px-2.5 rounded-md bg-[var(--surface0)] text-[var(--overlay)] hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[var(--surface0)] disabled:hover:text-[var(--overlay)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+      {isNewRoom && (
+        <div className="mb-2">
+          <div className="text-[0.58rem] text-[var(--overlay)] mb-1">New room — pick its codec:</div>
+          <div className="flex gap-1">
+            {QUALITY_OPTIONS.map(opt => (
+              <button key={opt.value} onClick={() => setNewRoomQuality(opt.value)}
+                className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors cursor-pointer ${
+                  newRoomQuality === opt.value
+                    ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
+                    : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)]"
+                }`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button onClick={() => setRoomInput(randomRoomName())}
+        className="flex items-center gap-1 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--tv-accent)] transition-colors cursor-pointer mb-2">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+        random
+      </button>
+      <div className="space-y-0.5">
+        {listRooms.map(r => (
+          <button key={r.name} onClick={() => handleJoin(r.name, (r.quality as Quality | null) ?? undefined)}
+            className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
+            <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{r.name}</span>
+            {r.count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{r.count}</span>}
+            {r.quality && (
+              <span className={`ml-auto text-[0.55rem] font-mono px-1.5 py-px rounded ${
+                r.count > 0
+                  ? "bg-[var(--mantle)] text-[var(--tv-accent)]"
+                  : "bg-[var(--mantle)] text-[var(--overlay)] group-hover:text-[var(--subtext)]"
+              }`}>{qualityLabel(r.quality as Quality)}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const codecBlock = (
+    <div>
+      <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">Codec</div>
+      <div className="flex gap-1 mb-1.5">
+        {QUALITY_OPTIONS.map(opt => {
+          const active = effectiveQuality === opt.value;
+          const loaded = codec.isQualityLoaded(opt.value);
+          const locked = room.isConnected && !!roomQuality && opt.value !== roomQuality;
+          return (
+            <button
+              key={opt.value}
+              disabled={locked || codec.state === "loading"}
+              title={locked ? "Room locks quality" : loaded ? `Encode with ${opt.label}` : `Download & use ${opt.label}`}
+              onClick={() => {
+                if (loaded) codec.setActiveQuality(opt.value);
+                else codec.loadModels(opt.value).then(ok => { if (ok) codec.setActiveQuality(opt.value); }).catch(() => {});
+              }}
+              className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors ${
+                active
+                  ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
+                  : locked
+                    ? "text-[var(--surface2)] cursor-not-allowed"
+                    : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)] cursor-pointer"
+              }`}
+            >
+              {opt.label}{loaded ? "" : " ↓"}
+            </button>
+          );
+        })}
+      </div>
+      {room.isConnected && roomQuality && (
+        <div className="text-[0.58rem] text-[var(--overlay)] mb-1.5">Quality locked by room</div>
+      )}
+      <div className="flex items-center gap-2 mb-2">
+        <div className={`w-1.5 h-1.5 rounded-full ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
+        <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
+      </div>
+      {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
+      <button onClick={() => setDownloadOpen(true)} disabled={codec.state === "loading"}
+        className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
+        {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Change models" : "Choose models"}
+      </button>
+      {codec.state === "loading" && (
+        <button onClick={codec.abortLoading}
+          className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer mb-1">
+          Cancel download
+        </button>
+      )}
+      {clearConfirm ? (
+        <div className="flex gap-1.5 mt-1">
+          <button onClick={() => { codec.clearModelCache(); setClearConfirm(false); }}
+            className="flex-1 py-1 rounded-md text-[0.65rem] font-medium text-[var(--red)] bg-[color-mix(in_srgb,var(--red)_10%,var(--surface0))] hover:bg-[color-mix(in_srgb,var(--red)_20%,var(--surface0))] transition-colors cursor-pointer">
+            Yes, delete models
+          </button>
+          <button onClick={() => setClearConfirm(false)}
+            className="flex-1 py-1 rounded-md text-[0.65rem] text-[var(--overlay)] bg-[var(--surface0)] hover:bg-[var(--surface1)] transition-colors cursor-pointer">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => setClearConfirm(true)}
+          className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">
+          Delete downloaded models
+        </button>
+      )}
+    </div>
+  );
+
+  const pttButtonEl = (size: "lg" | "sm") => (
+    <button
+      className={`relative ${size === "lg" ? "w-[130px] h-[130px]" : "w-[96px] h-[96px]"} rounded-full border-2 flex flex-col items-center justify-center gap-1 select-none touch-none transition-all duration-200 ${
+        effectiveState === "disabled"
+          ? "border-[var(--surface0)] bg-[var(--base)] text-[var(--surface2)] opacity-30 cursor-not-allowed"
+          : effectiveState === "recording"
+            ? "border-[var(--red)] bg-[var(--red)]/[0.06] text-[var(--red)] ptt-recording cursor-pointer"
+            : effectiveState === "encoding"
+              ? "border-[var(--yellow)] bg-[var(--yellow)]/[0.04] text-[var(--yellow)] cursor-wait"
+              : "border-[var(--surface1)] bg-[var(--base)] text-[var(--overlay)] hover:border-[var(--tv-accent)]/40 hover:text-[var(--tv-accent)] cursor-pointer"
+      }`}
+      onPointerDown={e => { e.preventDefault(); if (effectiveState !== "disabled") handleDown(); }}
+      onPointerUp={e => { e.preventDefault(); handleUp(); }}
+      onPointerLeave={e => { e.preventDefault(); handleUp(); }}
+    >
+      {effectiveState === "recording" ? <Square className={size === "lg" ? "w-7 h-7" : "w-5 h-5"} />
+        : effectiveState === "encoding" ? <Loader2 className={`${size === "lg" ? "w-7 h-7" : "w-5 h-5"} animate-spin`} />
+        : <Mic className={size === "lg" ? "w-7 h-7" : "w-5 h-5"} />}
+      <span className={`${size === "lg" ? "text-[0.75rem]" : "text-[0.6rem]"} font-semibold tracking-widest uppercase`}>
+        {effectiveState === "recording" ? "RELEASE" : effectiveState === "encoding" ? "ENCODING" : "HOLD"}
+      </span>
+    </button>
+  );
+
+  const messageListBlock = (
+    <div className="h-full rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
+      <MessageList
+        messages={messages}
+        playingId={playingMessageId}
+        loadingId={loadingMessageId}
+        onPlay={handlePlayToggle}
+      />
+    </div>
+  );
+
+  const diagnosticsLogPanel = (heightClass: string) => (
+    <div className={`${heightClass} rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden`}>
+      <ScrollArea className="h-full">
+        <div className="font-mono text-[0.7rem] leading-[1.8] p-2.5">
+          {logEntries.length === 0 && (
+            <span className="text-[var(--surface2)]">No activity yet</span>
+          )}
+          {logEntries.map(entry => (
+            <div key={entry.id} className="log-entry">
+              {entry.message && (
+                <div
+                  className={`${LOG_COLORS[entry.type]} ${entry.hexData ? "cursor-pointer select-none" : ""}`}
+                  onClick={() => entry.hexData && toggleHex(entry.id)}
+                >
+                  {entry.hexData && (
+                    <span className={`mr-1 inline-block text-[0.55rem] text-[var(--overlay)] transition-transform ${openHexIds.has(entry.id) ? "rotate-90" : ""}`}>
+                      {"▸"}
+                    </span>
+                  )}
+                  {entry.message}
+                </div>
+              )}
+              {entry.hexData && entry.hexType && (
+                <HexDump
+                  data={entry.hexData}
+                  type={entry.hexType}
+                  open={openHexIds.has(entry.id)}
+                  showTrigger={false}
+                />
+              )}
+            </div>
+          ))}
+          <div ref={logEndRef} />
+        </div>
+      </ScrollArea>
+    </div>
+  );
+
+  const dockChip = (label: string, value: string) => (
+    <div key={label} className="flex items-center justify-between px-2 py-1 rounded-md bg-[var(--base)] border border-[var(--surface0)] font-mono text-[0.58rem] text-[var(--overlay)]">
+      <span>{label}</span>
+      <span className={value === "—" ? "text-[var(--surface2)]" : "text-[var(--text)] font-semibold"}>{value}</span>
+    </div>
+  );
+
   return (
     <>
       <div className="min-h-screen bg-[var(--crust)] text-[var(--text)] flex items-center justify-center p-3">
-        <div className="w-full max-w-[960px] max-h-[calc(100vh-1.5rem)] h-[700px] mx-auto rounded-xl border border-[var(--surface0)] bg-[var(--base)] overflow-hidden flex flex-col">
+        <div className={`w-full ${ethos === "stage-swap" ? "max-w-[560px]" : "max-w-[960px]"} max-h-[calc(100vh-1.5rem)] h-[700px] mx-auto rounded-xl border border-[var(--surface0)] bg-[var(--base)] overflow-hidden flex flex-col`}>
 
           {/* ── Header ── */}
           <header className="flex items-center h-11 px-4 bg-[var(--mantle)] border-b border-[var(--surface0)] flex-shrink-0">
@@ -369,21 +587,14 @@ export function PTTPage() {
             </div>
           </header>
 
-          {/* ── Two-pane body ── */}
+          {ethos === "split-deck" ? (
           <div className="flex flex-1 min-h-0">
 
             {/* ── Sidebar ── */}
             <div className="w-[260px] flex-shrink-0 border-r border-[var(--surface0)] flex flex-col bg-[var(--base)]">
               {/* Username */}
               <div className="p-3 border-b border-[var(--surface0)]">
-                <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">You</div>
-                <input type="text" spellCheck={false} value={room.username} onChange={e => handleUsernameChange(e.target.value)}
-                  maxLength={64} placeholder="your name" className="w-full px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
-                <div className="mt-1 text-[0.6rem] text-[var(--overlay)]">
-                  {savedUsername
-                    ? room.isConnected ? `Visible as ${savedUsername}` : `Saved as ${savedUsername}`
-                    : "Using anon"}
-                </div>
+                {usernameBlock}
               </div>
 
               {/* Room */}
@@ -409,126 +620,12 @@ export function PTTPage() {
                     <button onClick={() => room.leaveRoom()}
                       className="text-[0.7rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">Leave</button>
                   </div>
-                ) : (
-                  <div>
-                    <div className="flex gap-1 mb-2">
-                      <input type="text" spellCheck={false} autoComplete="off" placeholder="room name"
-                        maxLength={128} value={roomInput} onChange={e => { setRoomInput(e.target.value); setNewRoomQuality(null); }} onKeyDown={e => e.key === "Enter" && canJoinTyped && handleJoin()}
-                        className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
-                      <button onClick={() => handleJoin()} disabled={!canJoinTyped}
-                        title={isNewRoom && !newRoomQuality ? "Pick a codec for the new room first" : "Join"}
-                        className="px-2.5 rounded-md bg-[var(--surface0)] text-[var(--overlay)] hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[var(--surface0)] disabled:hover:text-[var(--overlay)]">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                      </button>
-                    </div>
-                    {isNewRoom && (
-                      <div className="mb-2">
-                        <div className="text-[0.58rem] text-[var(--overlay)] mb-1">New room — pick its codec:</div>
-                        <div className="flex gap-1">
-                          {QUALITY_OPTIONS.map(opt => (
-                            <button key={opt.value} onClick={() => setNewRoomQuality(opt.value)}
-                              className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors cursor-pointer ${
-                                newRoomQuality === opt.value
-                                  ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
-                                  : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)]"
-                              }`}>
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <button onClick={() => setRoomInput(randomRoomName())}
-                      className="flex items-center gap-1 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--tv-accent)] transition-colors cursor-pointer mb-2">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
-                      random
-                    </button>
-                    <div className="space-y-0.5">
-                      {listRooms.map(r => (
-                        <button key={r.name} onClick={() => handleJoin(r.name, (r.quality as Quality | null) ?? undefined)}
-                          className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
-                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
-                          <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{r.name}</span>
-                          {r.count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{r.count}</span>}
-                          {r.quality && (
-                            <span className={`ml-auto text-[0.55rem] font-mono px-1.5 py-px rounded ${
-                              r.count > 0
-                                ? "bg-[var(--mantle)] text-[var(--tv-accent)]"
-                                : "bg-[var(--mantle)] text-[var(--overlay)] group-hover:text-[var(--subtext)]"
-                            }`}>{qualityLabel(r.quality as Quality)}</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                ) : roomJoinBlock}
               </div>
 
               {/* Codec */}
               <div className="p-3 border-b border-[var(--surface0)]">
-                <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">Codec</div>
-                <div className="flex gap-1 mb-1.5">
-                  {QUALITY_OPTIONS.map(opt => {
-                    const active = effectiveQuality === opt.value;
-                    const loaded = codec.isQualityLoaded(opt.value);
-                    const locked = room.isConnected && !!roomQuality && opt.value !== roomQuality;
-                    return (
-                      <button
-                        key={opt.value}
-                        disabled={locked || codec.state === "loading"}
-                        title={locked ? "Room locks quality" : loaded ? `Encode with ${opt.label}` : `Download & use ${opt.label}`}
-                        onClick={() => {
-                          if (loaded) codec.setActiveQuality(opt.value);
-                          else codec.loadModels(opt.value).then(ok => { if (ok) codec.setActiveQuality(opt.value); }).catch(() => {});
-                        }}
-                        className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors ${
-                          active
-                            ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
-                            : locked
-                              ? "text-[var(--surface2)] cursor-not-allowed"
-                              : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)] cursor-pointer"
-                        }`}
-                      >
-                        {opt.label}{loaded ? "" : " ↓"}
-                      </button>
-                    );
-                  })}
-                </div>
-                {room.isConnected && roomQuality && (
-                  <div className="text-[0.58rem] text-[var(--overlay)] mb-1.5">Quality locked by room</div>
-                )}
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={`w-1.5 h-1.5 rounded-full ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
-                  <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
-                </div>
-                {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
-                <button onClick={() => setDownloadOpen(true)} disabled={codec.state === "loading"}
-                  className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
-                  {codec.state === "loading" ? "Loading models..." : codec.modelsLoaded ? "Change models" : "Choose models"}
-                </button>
-                {codec.state === "loading" && (
-                  <button onClick={codec.abortLoading}
-                    className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer mb-1">
-                    Cancel download
-                  </button>
-                )}
-                {clearConfirm ? (
-                  <div className="flex gap-1.5 mt-1">
-                    <button onClick={() => { codec.clearModelCache(); setClearConfirm(false); }}
-                      className="flex-1 py-1 rounded-md text-[0.65rem] font-medium text-[var(--red)] bg-[color-mix(in_srgb,var(--red)_10%,var(--surface0))] hover:bg-[color-mix(in_srgb,var(--red)_20%,var(--surface0))] transition-colors cursor-pointer">
-                      Yes, delete models
-                    </button>
-                    <button onClick={() => setClearConfirm(false)}
-                      className="flex-1 py-1 rounded-md text-[0.65rem] text-[var(--overlay)] bg-[var(--surface0)] hover:bg-[var(--surface1)] transition-colors cursor-pointer">
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setClearConfirm(true)}
-                    className="w-full py-1 rounded-md text-[0.65rem] text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer">
-                    Delete downloaded models
-                  </button>
-                )}
+                {codecBlock}
               </div>
 
               {/* Spacer + bottom links */}
@@ -547,27 +644,7 @@ export function PTTPage() {
             <div className="flex-1 flex flex-col min-h-0 bg-[var(--mantle)]">
               {/* PTT zone */}
               <div className="flex flex-col items-center justify-center py-6 flex-shrink-0">
-                <button
-                  className={`relative w-[130px] h-[130px] rounded-full border-2 flex flex-col items-center justify-center gap-1 select-none touch-none transition-all duration-200 ${
-                    effectiveState === "disabled"
-                      ? "border-[var(--surface0)] bg-[var(--base)] text-[var(--surface2)] opacity-30 cursor-not-allowed"
-                      : effectiveState === "recording"
-                        ? "border-[var(--red)] bg-[var(--red)]/[0.06] text-[var(--red)] ptt-recording cursor-pointer"
-                        : effectiveState === "encoding"
-                          ? "border-[var(--yellow)] bg-[var(--yellow)]/[0.04] text-[var(--yellow)] cursor-wait"
-                          : "border-[var(--surface1)] bg-[var(--base)] text-[var(--overlay)] hover:border-[var(--tv-accent)]/40 hover:text-[var(--tv-accent)] cursor-pointer"
-                  }`}
-                  onPointerDown={e => { e.preventDefault(); if (effectiveState !== "disabled") handleDown(); }}
-                  onPointerUp={e => { e.preventDefault(); handleUp(); }}
-                  onPointerLeave={e => { e.preventDefault(); handleUp(); }}
-                >
-                  {effectiveState === "recording" ? <Square className="w-7 h-7" />
-                    : effectiveState === "encoding" ? <Loader2 className="w-7 h-7 animate-spin" />
-                    : <Mic className="w-7 h-7" />}
-                  <span className="text-[0.75rem] font-semibold tracking-widest uppercase">
-                    {effectiveState === "recording" ? "RELEASE" : effectiveState === "encoding" ? "ENCODING" : "HOLD"}
-                  </span>
-                </button>
+                {pttButtonEl("lg")}
 
                 {recorder.isRecording && recorder.analyserNode && (
                   <div className="mt-3"><WaveformCanvas analyserNode={recorder.analyserNode} active={recorder.isRecording} /></div>
@@ -605,14 +682,7 @@ export function PTTPage() {
 
               {/* Voice messages */}
               <div className="flex-1 min-h-0 px-4 pt-3">
-                <div className="h-full rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
-                  <MessageList
-                    messages={messages}
-                    playingId={playingMessageId}
-                    loadingId={loadingMessageId}
-                    onPlay={handlePlayToggle}
-                  />
-                </div>
+                {messageListBlock}
               </div>
 
               {/* Diagnostics (demoted activity log) */}
@@ -625,45 +695,106 @@ export function PTTPage() {
                   Diagnostics {"\u00b7"} {logEntries.length}
                 </button>
                 {diagnosticsOpen && (
-                  <div className="mt-1.5 h-36 rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">
-                    <ScrollArea className="h-full">
-                      <div className="font-mono text-[0.7rem] leading-[1.8] p-2.5">
-                        {logEntries.length === 0 && (
-                          <span className="text-[var(--surface2)]">No activity yet</span>
-                        )}
-                        {logEntries.map(entry => (
-                          <div key={entry.id} className="log-entry">
-                            {entry.message && (
-                              <div
-                                className={`${LOG_COLORS[entry.type]} ${entry.hexData ? "cursor-pointer select-none" : ""}`}
-                                onClick={() => entry.hexData && toggleHex(entry.id)}
-                              >
-                                {entry.hexData && (
-                                  <span className={`mr-1 inline-block text-[0.55rem] text-[var(--overlay)] transition-transform ${openHexIds.has(entry.id) ? "rotate-90" : ""}`}>
-                                    {"\u25b8"}
-                                  </span>
-                                )}
-                                {entry.message}
-                              </div>
-                            )}
-                            {entry.hexData && entry.hexType && (
-                              <HexDump
-                                data={entry.hexData}
-                                type={entry.hexType}
-                                open={openHexIds.has(entry.id)}
-                                showTrigger={false}
-                              />
-                            )}
-                          </div>
-                        ))}
-                        <div ref={logEndRef} />
-                      </div>
-                    </ScrollArea>
-                  </div>
+                  <div className="mt-1.5">{diagnosticsLogPanel("h-36")}</div>
                 )}
               </div>
             </div>
           </div>
+          ) : room.isConnected && room.currentRoom ? (
+          /* ── Stage Swap: room (Thumb Dock) ── */
+          <div className="flex flex-col flex-1 min-h-0 bg-[var(--mantle)]">
+            {/* Room header */}
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--surface0)] bg-[var(--base)] flex-shrink-0">
+              <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse flex-shrink-0" />
+              <span className="font-mono text-[0.85rem] font-semibold">{room.currentRoom}</span>
+              {roomQuality && (
+                <span className="text-[0.6rem] font-mono px-1.5 py-0.5 rounded bg-[var(--mantle)] text-[var(--tv-accent)] flex-shrink-0">{qualityLabel(roomQuality)}</span>
+              )}
+              <div className="flex flex-wrap gap-1 min-w-0">
+                {room.users.map(u => (
+                  <span key={u} className="text-[0.6rem] font-mono px-1.5 py-0.5 rounded bg-[var(--mantle)] text-[var(--subtext)]">{u}</span>
+                ))}
+              </div>
+              <div className="flex-1" />
+              <button
+                onClick={() => setDiagnosticsOpen(o => !o)}
+                title="Diagnostics"
+                className="text-[0.62rem] font-mono text-[var(--overlay)] hover:text-[var(--subtext)] transition-colors cursor-pointer flex-shrink-0"
+              >
+                {"▸"} {logEntries.length}
+              </button>
+              <button
+                onClick={() => room.leaveRoom()}
+                className="text-[0.65rem] font-semibold text-[var(--overlay)] border border-[var(--surface0)] rounded-full px-2.5 py-0.5 hover:text-[var(--red)] hover:border-[var(--red)]/30 transition-colors cursor-pointer flex-shrink-0"
+              >
+                ← Leave
+              </button>
+            </div>
+            {diagnosticsOpen && (
+              <div className="px-4 pt-2 flex-shrink-0">{diagnosticsLogPanel("h-32")}</div>
+            )}
+
+            {/* Conversation fills the canvas */}
+            <div className="flex-1 min-h-0 px-4 pt-3">
+              {messageListBlock}
+            </div>
+
+            {/* Hex comet / waveform ride above the dock */}
+            {hexPlayback && (
+              <div className="px-4 pt-2 flex-shrink-0">
+                <HexStream
+                  data={hexPlayback.packet}
+                  active
+                  duration={hexPlayback.duration}
+                  label="Token data"
+                />
+              </div>
+            )}
+            {recorder.isRecording && recorder.analyserNode && (
+              <div className="flex justify-center pt-2 flex-shrink-0">
+                <WaveformCanvas analyserNode={recorder.analyserNode} active={recorder.isRecording} />
+              </div>
+            )}
+
+            {/* Thumb dock */}
+            <div className="flex items-center justify-center gap-3.5 px-4 py-3 flex-shrink-0">
+              <div className="flex w-[96px] flex-col gap-1">
+                {dockChip("sent", stats.bytesSent)}
+                {dockChip("enc", stats.encodeTime)}
+              </div>
+              {pttButtonEl("sm")}
+              <div className="flex w-[96px] flex-col gap-1">
+                {dockChip("recv", stats.bytesRecv)}
+                {dockChip("dec", stats.decodeTime)}
+              </div>
+            </div>
+          </div>
+          ) : (
+          /* ── Stage Swap: lobby ── */
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--mantle)]">
+            <div className="flex flex-col gap-3 p-4">
+              <div className="rounded-lg border border-[var(--surface0)] bg-[var(--base)] p-3.5">
+                {usernameBlock}
+              </div>
+              <div className="rounded-lg border border-[var(--surface0)] bg-[var(--base)] p-3.5">
+                <div className="text-[0.6rem] uppercase tracking-[0.15em] text-[var(--overlay)] font-semibold mb-1.5">Rooms</div>
+                {roomJoinBlock}
+              </div>
+              <div className="rounded-lg border border-[var(--surface0)] bg-[var(--base)] p-3.5">
+                {codecBlock}
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="flex items-center gap-2 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer"
+                >
+                  <GearIcon size={14} /> Settings
+                </button>
+                <span className="text-[0.62rem] text-[var(--overlay)]">pick a room to start talking</span>
+              </div>
+            </div>
+          </div>
+          )}
         </div>
       </div>
 

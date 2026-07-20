@@ -50,7 +50,12 @@ The existing 6 themes (for reference, not prescription):
 ## PTT Page
 
 ### Layout
-Two-pane layout: fixed-width sidebar (left) + main content area (right), inside a bordered container centered on screen.
+
+**Split Deck:** two-pane layout — fixed-width sidebar (left) + main content area (right), inside a bordered container (~960px) centered on screen.
+
+**Stage Swap ("Thumb Dock"):** the container narrows (~560px) and PTT becomes two stages.
+- *Lobby* (disconnected): stacked cards — You, Rooms (join input, new-room codec picker, merged room list with badges), Codec — with Settings and a "pick a room to start talking" hint at the foot. No talk surface.
+- *Room* (connected): a header strip (beacon, room name, codec badge, user tags, a compact diagnostics toggle, "← Leave") over a conversation that owns the canvas. The PTT button docks at the bottom center where a thumb lives, flanked by compact stat chips (sent/enc left, recv/dec right). The hex comet and recording waveform ride directly above the dock. Leaving returns to the lobby.
 
 ### Sidebar
 
@@ -152,7 +157,7 @@ The app has two design ethoses, chosen in the Settings panel and persisted:
 - **Stage Swap** (default) — one stage at a time. Producing a result swaps the whole canvas to it; a "← back" affordance returns to the controls. Nothing stacks, nothing scrolls.
 - **Split Deck** — controls dock into a compact left rail and the result owns a wide right pane, both always visible. The page widens to fit; on narrow screens it falls back to a stacked column.
 
-Both ethoses apply to the QR page's Record and Decode tabs. The PTT page is a split deck by construction (sidebar + main).
+Both ethoses apply to the QR page's Record and Decode tabs and to the PTT page.
 
 ## QR Page
 
