@@ -62,8 +62,9 @@ Two-pane layout: fixed-width sidebar (left) + main content area (right), inside 
 #### Room
 **Disconnected state:**
 - Text input for room name + join button (arrow icon) + random name button (shuffle icon)
-- List of rooms below: either active rooms (fetched from server, showing active indicator, user count, and the room's locked quality) or suggested fallback rooms (static list, inactive indicators)
-- Clicking any room joins it
+- List of rooms below: active rooms (fetched from server, showing active indicator + user count) merged with the three default rooms — one per codec (bifrost 12.5hz, midgard 25hz, valhalla 50hz). Every room with a codec shows a small right-aligned codec badge: accent-colored when the room is live and locked, muted for idle defaults.
+- Clicking any room joins it; default rooms lock to their assigned codec.
+- **New rooms must pick a codec:** typing a name that matches no active or default room reveals a "New room — pick its codec" chip row, and the join button stays disabled until one is chosen. The pick becomes the room's lock.
 
 **Connected state:**
 - Beacon animation (pulsing dot with expanding ring, conveying "connected") + room name + the room's locked quality as an accent chip + online count

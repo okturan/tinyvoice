@@ -31,7 +31,7 @@ interface RoomContextValue {
   roomQuality: RelayQuality | null;
   activeRooms: LobbyRoom[];
   recentRooms: string[];
-  joinRoom: (name: string) => boolean;
+  joinRoom: (name: string, quality?: RelayQuality) => boolean;
   leaveRoom: () => void;
   sendPacket: (data: ArrayBuffer) => void;
   onPacketReceived: (handler: PacketHandler) => () => void;
@@ -93,10 +93,12 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   }, [updateName]);
 
   const joinRoom = useCallback(
-    (name: string) => {
+    (name: string, quality?: RelayQuality) => {
       const room = normalizeRoomName(name);
       if (!room) return false;
-      connect(room, username || "anon", codec.activeQuality);
+      // An explicit quality (default room, or the new-room picker) wins;
+      // otherwise announce the user's active quality.
+      connect(room, username || "anon", quality ?? codec.activeQuality);
       return true;
     },
     [connect, username, codec.activeQuality],

@@ -2,7 +2,7 @@ import { useState, useMemo, type KeyboardEvent } from "react";
 import { useRoom } from "@/contexts/RoomContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SUGGESTED_ROOMS } from "@/lib/constants";
+import { DEFAULT_ROOMS } from "@/lib/constants";
 import { randomRoomName } from "@/lib/utils/names";
 
 export function ConnectionPanel() {
@@ -37,7 +37,7 @@ export function ConnectionPanel() {
       return activeRooms.map((r) => ({ name: r.name, count: r.count }));
     if (recentRooms.length > 0)
       return recentRooms.map((name) => ({ name, count: 0 }));
-    return SUGGESTED_ROOMS.map((name) => ({ name, count: 0 }));
+    return DEFAULT_ROOMS.map(({ name }) => ({ name, count: 0 }));
   }, [activeRooms, recentRooms]);
 
   if (isConnected && currentRoom) {

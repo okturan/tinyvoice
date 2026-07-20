@@ -36,12 +36,11 @@ export const RELAY_HTTP =
     ? "http://localhost:8787"
     : "https://tinyvoice-relay.okan.workers.dev";
 
-export const SUGGESTED_ROOMS = [
-  "odin",
-  "valhalla",
-  "bifrost",
-  "midgard",
-  "asgard",
+/** Default rooms — one per codec quality, which becomes the room's lock. */
+export const DEFAULT_ROOMS: { name: string; quality: Quality }[] = [
+  { name: "bifrost", quality: Quality.Hz12_5 },
+  { name: "midgard", quality: Quality.Hz25 },
+  { name: "valhalla", quality: Quality.Hz50 },
 ];
 
 export const QUALITY_OPTIONS: {

@@ -19,7 +19,7 @@ import { codec as codecService } from "@/lib/codec-service";
 import { trimLeadingSilence } from "@/lib/audio/trim";
 import { getTrimSilence } from "@/lib/mic-settings";
 import { Quality } from "@/types/codec";
-import { QUALITY_OPTIONS, SR, SUGGESTED_ROOMS } from "@/lib/constants";
+import { DEFAULT_ROOMS, QUALITY_OPTIONS, SR } from "@/lib/constants";
 import { randomRoomName } from "@/lib/utils/names";
 import { fmt, qualityLabel } from "@/lib/format";
 
@@ -64,6 +64,7 @@ export function PTTPage() {
   const [loadingMessageId, setLoadingMessageId] = useState<number | null>(null);
   const [pttState, setPttState] = useState<PTTState>("disabled");
   const [roomInput, setRoomInput] = useState("");
+  const [newRoomQuality, setNewRoomQuality] = useState<Quality | null>(null);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -309,9 +310,43 @@ export function PTTPage() {
       ? pttState : isPttReady ? "idle" : "disabled";
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logEntries]);
-  const handleJoin = (name?: string) => {
-    const candidate = name || roomInput;
-    if (candidate && !room.joinRoom(candidate)) addLog("Invalid room name", "warn");
+
+  // ── Room list: active rooms + the per-codec defaults not yet active ──
+  const activeRoomNames = new Set(room.activeRooms.map(r => r.name));
+  const listRooms = [
+    ...room.activeRooms,
+    ...DEFAULT_ROOMS.filter(d => !activeRoomNames.has(d.name)).map(d => ({
+      name: d.name,
+      count: 0,
+      quality: d.quality as Quality | null,
+    })),
+  ];
+
+  // A typed name that matches nothing known is a brand-new room and
+  // needs an explicit codec pick before it can be created.
+  const typedRoom = roomInput.trim();
+  const typedDefault = DEFAULT_ROOMS.find(d => d.name === typedRoom);
+  const isNewRoom = Boolean(typedRoom) && !activeRoomNames.has(typedRoom) && !typedDefault;
+  const canJoinTyped = Boolean(typedRoom) && (!isNewRoom || newRoomQuality !== null);
+
+  const handleJoin = (name?: string, quality?: Quality) => {
+    const candidate = name ?? typedRoom;
+    if (!candidate) return;
+    let resolved = quality;
+    if (name === undefined) {
+      // Joining from the input: known rooms bring their own codec,
+      // new rooms require the picker.
+      if (typedDefault) resolved = typedDefault.quality;
+      else if (isNewRoom) {
+        if (!newRoomQuality) return;
+        resolved = newRoomQuality;
+      }
+    }
+    if (!room.joinRoom(candidate, resolved)) {
+      addLog("Invalid room name", "warn");
+      return;
+    }
+    setNewRoomQuality(null);
   };
 
   return (
@@ -378,27 +413,49 @@ export function PTTPage() {
                   <div>
                     <div className="flex gap-1 mb-2">
                       <input type="text" spellCheck={false} autoComplete="off" placeholder="room name"
-                        maxLength={128} value={roomInput} onChange={e => setRoomInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleJoin()}
+                        maxLength={128} value={roomInput} onChange={e => { setRoomInput(e.target.value); setNewRoomQuality(null); }} onKeyDown={e => e.key === "Enter" && canJoinTyped && handleJoin()}
                         className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-[var(--mantle)] border border-[var(--surface0)] text-[var(--text)] font-mono text-[0.8rem] outline-none focus:border-[var(--surface1)] transition-colors" />
-                      <button onClick={() => handleJoin()}
-                        className="px-2.5 rounded-md bg-[var(--surface0)] text-[var(--overlay)] hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer">
+                      <button onClick={() => handleJoin()} disabled={!canJoinTyped}
+                        title={isNewRoom && !newRoomQuality ? "Pick a codec for the new room first" : "Join"}
+                        className="px-2.5 rounded-md bg-[var(--surface0)] text-[var(--overlay)] hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-[var(--surface0)] disabled:hover:text-[var(--overlay)]">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                       </button>
                     </div>
+                    {isNewRoom && (
+                      <div className="mb-2">
+                        <div className="text-[0.58rem] text-[var(--overlay)] mb-1">New room — pick its codec:</div>
+                        <div className="flex gap-1">
+                          {QUALITY_OPTIONS.map(opt => (
+                            <button key={opt.value} onClick={() => setNewRoomQuality(opt.value)}
+                              className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors cursor-pointer ${
+                                newRoomQuality === opt.value
+                                  ? "bg-[var(--surface0)] font-semibold text-[var(--text)]"
+                                  : "text-[var(--overlay)] hover:bg-[var(--mantle)] hover:text-[var(--subtext)]"
+                              }`}>
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <button onClick={() => setRoomInput(randomRoomName())}
                       className="flex items-center gap-1 text-[0.7rem] text-[var(--overlay)] hover:text-[var(--tv-accent)] transition-colors cursor-pointer mb-2">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
                       random
                     </button>
                     <div className="space-y-0.5">
-                      {(room.activeRooms.length > 0 ? room.activeRooms : SUGGESTED_ROOMS.map(n => ({ name: n, count: 0, quality: null }))).map(r => (
-                        <button key={r.name} onClick={() => handleJoin(r.name)}
+                      {listRooms.map(r => (
+                        <button key={r.name} onClick={() => handleJoin(r.name, (r.quality as Quality | null) ?? undefined)}
                           className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
                           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
                           <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{r.name}</span>
                           {r.count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{r.count}</span>}
-                          {r.count > 0 && r.quality && (
-                            <span className="text-[0.55rem] text-[var(--overlay)] font-mono">{qualityLabel(r.quality as Quality)}</span>
+                          {r.quality && (
+                            <span className={`ml-auto text-[0.55rem] font-mono px-1.5 py-px rounded ${
+                              r.count > 0
+                                ? "bg-[var(--mantle)] text-[var(--tv-accent)]"
+                                : "bg-[var(--mantle)] text-[var(--overlay)] group-hover:text-[var(--subtext)]"
+                            }`}>{qualityLabel(r.quality as Quality)}</span>
                           )}
                         </button>
                       ))}
@@ -564,8 +621,8 @@ export function PTTPage() {
                   onClick={() => setDiagnosticsOpen(o => !o)}
                   className="flex items-center gap-1.5 text-[0.62rem] font-mono text-[var(--overlay)] hover:text-[var(--subtext)] transition-colors cursor-pointer"
                 >
-                  <span className={`inline-block text-[0.5rem] transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`}>\u25b8</span>
-                  Diagnostics \u00b7 {logEntries.length}
+                  <span className={`inline-block text-[0.5rem] transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`}>{"\u25b8"}</span>
+                  Diagnostics {"\u00b7"} {logEntries.length}
                 </button>
                 {diagnosticsOpen && (
                   <div className="mt-1.5 h-36 rounded-lg border border-[var(--surface0)] bg-[var(--base)] overflow-hidden">

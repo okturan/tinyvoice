@@ -48,7 +48,7 @@ src/
     model-loader.ts     — Download with progress + AbortController + cache
     wire-format.ts      — Magic byte pack/unpack
     codec-service.ts    — Unified CodecService singleton (encode/decode/model loading)
-    constants.ts        — SR, NFFT, HOP, relay URLs, themes, room names, quality options
+    constants.ts        — SR, NFFT, HOP, relay URLs, themes, default rooms (one per quality), quality options
     format.ts           — Byte formatter
     qrParsing.ts        — Base64 voice URL encode/decode
     audio/
