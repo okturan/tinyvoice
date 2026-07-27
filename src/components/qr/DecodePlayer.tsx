@@ -323,7 +323,11 @@ export default function DecodePlayer({
         <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
           Decoder:
         </span>
-        {QUALITY_BTNS.map((q) => (
+        {QUALITY_BTNS.filter(
+          // The Auto label already names the packet's own quality —
+          // don't list it a second time.
+          (q) => q.value === "auto" || q.value !== parsed.quality,
+        ).map((q) => (
           <Button
             key={q.value}
             variant="ghost"

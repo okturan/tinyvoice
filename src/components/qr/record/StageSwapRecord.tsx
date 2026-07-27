@@ -41,12 +41,13 @@ export default function StageSwapRecord() {
             </span>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
-              <CardContent className="py-4 px-4">
+            <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0 sm:h-full">
+              <CardContent className="py-4 px-4 sm:h-full">
                 <QRResult
                   packed={flow.encodeResult.packed}
                   duration={flow.encodeResult.duration}
                   onHexOpen={() => flow.setHexOpen(true)}
+                  fillHex
                 />
               </CardContent>
             </Card>

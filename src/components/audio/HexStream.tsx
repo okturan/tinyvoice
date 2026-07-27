@@ -8,6 +8,8 @@ export interface HexStreamProps {
   className?: string;
   label?: string;
   hasMagicByte?: boolean;
+  /** Grow to fill the parent's height (internal scroll) instead of the 9rem cap. */
+  fill?: boolean;
 }
 
 const HEAD_CLASS =
@@ -32,6 +34,7 @@ export function HexStream({
   className,
   label = "Token data",
   hasMagicByte = true,
+  fill = false,
 }: HexStreamProps) {
   const [activeByte, setActiveByte] = useState(-1);
   const dumpRef = useRef<HTMLDivElement | null>(null);
@@ -101,10 +104,10 @@ export function HexStream({
 
   return (
     <section
-      className={cn("text-left", className)}
+      className={cn("text-left", fill && "flex min-h-0 flex-col", className)}
       aria-label={label}
     >
-      <div className="mb-3">
+      <div className="mb-3 flex-shrink-0">
         <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--overlay)]">
           {label}
         </div>
@@ -115,7 +118,11 @@ export function HexStream({
 
       <div
         ref={dumpRef}
-        className="relative max-h-36 overflow-y-auto break-all font-mono text-[0.55rem] leading-relaxed text-[var(--subtext)]"
+        className={cn(
+          "relative overflow-y-auto break-all font-mono text-[0.55rem] leading-relaxed text-[var(--subtext)]",
+          // On phones the stacked flow keeps the cap so the page stays short.
+          fill ? "max-h-36 sm:max-h-none sm:min-h-0 sm:flex-1" : "max-h-36",
+        )}
         aria-live="off"
       >
         {bytes.map((byte, index) => {

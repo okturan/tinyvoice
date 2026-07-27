@@ -28,6 +28,8 @@ interface QRResultProps {
   onHexOpen?: () => void;
   /** Hide the inline token dump (layouts that keep bytes behind the Hex sheet) */
   showHexStream?: boolean;
+  /** Let the token dump grow to fill the layout's remaining height. */
+  fillHex?: boolean;
 }
 
 export default function QRResult({
@@ -35,6 +37,7 @@ export default function QRResult({
   duration,
   onHexOpen,
   showHexStream = true,
+  fillHex = false,
 }: QRResultProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -256,7 +259,7 @@ export default function QRResult({
   ]);
 
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className={`flex flex-col items-center gap-3 ${fillHex ? "sm:h-full" : ""}`}>
       {qrDataUrl && (
         <img
           src={qrDataUrl}
@@ -350,7 +353,8 @@ export default function QRResult({
           active={playing}
           duration={audioBufferRef.current?.duration ?? duration}
           label="Token data"
-          className="w-full"
+          className={fillHex ? "w-full sm:min-h-0 sm:flex-1" : "w-full"}
+          fill={fillHex}
         />
       )}
 
@@ -359,7 +363,11 @@ export default function QRResult({
         <span className="mr-1 text-[0.6rem] text-[var(--overlay)]">
           Decoder:
         </span>
-        {DECODER_OPTS.map((opt) => (
+        {DECODER_OPTS.filter(
+          // The Auto label already names the packet's own quality —
+          // don't list it a second time.
+          (opt) => opt.value === "auto" || !parsedPacket || opt.value !== parsedPacket.quality,
+        ).map((opt) => (
           <Button
             key={opt.value}
             variant="ghost"
