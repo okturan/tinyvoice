@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Mic, Square, Loader2 } from "lucide-react";
 import GearIcon from "@/components/ui/gear-icon";
 import { useCodecContext } from "@/contexts/CodecContext";
