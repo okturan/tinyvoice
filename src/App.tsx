@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { CodecProvider } from "@/contexts/CodecContext";
 import { StatsProvider } from "@/contexts/StatsContext";

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import GearIcon from "@/components/ui/gear-icon";
 import { SettingsSheet } from "@/components/layout/SettingsSheet";
 
