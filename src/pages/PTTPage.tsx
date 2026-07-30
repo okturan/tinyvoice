@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "react-router";
-import { Mic, Square, Loader2 } from "lucide-react";
+import { Mic, Square, Loader2, ChevronRight, ScrollText } from "lucide-react";
 import GearIcon from "@/components/ui/gear-icon";
 import { useCodecContext } from "@/contexts/CodecContext";
 import { useStats } from "@/contexts/StatsContext";
@@ -689,10 +689,17 @@ export function PTTPage() {
               <div className="px-4 py-2 flex-shrink-0">
                 <button
                   onClick={() => setDiagnosticsOpen(o => !o)}
-                  className="flex items-center gap-1.5 text-[0.62rem] font-mono text-[var(--overlay)] hover:text-[var(--subtext)] transition-colors cursor-pointer"
+                  aria-expanded={diagnosticsOpen}
+                  className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[0.62rem] font-semibold transition-colors cursor-pointer ${
+                    diagnosticsOpen
+                      ? "border-[var(--surface1)] bg-[var(--surface0)] text-[var(--text)]"
+                      : "border-[var(--surface0)] text-[var(--overlay)] hover:text-[var(--subtext)] hover:border-[var(--surface1)]"
+                  }`}
                 >
-                  <span className={`inline-block text-[0.5rem] transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`}>{"\u25b8"}</span>
-                  Diagnostics {"\u00b7"} {logEntries.length}
+                  <ChevronRight className={`size-3 transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`} />
+                  <ScrollText className="size-3" />
+                  Activity log
+                  <span className="font-mono opacity-70">{logEntries.length}</span>
                 </button>
                 {diagnosticsOpen && (
                   <div className="mt-1.5">{diagnosticsLogPanel("h-36")}</div>
@@ -718,10 +725,26 @@ export function PTTPage() {
               <div className="flex-1" />
               <button
                 onClick={() => setDiagnosticsOpen(o => !o)}
-                title="Diagnostics"
-                className="text-[0.62rem] font-mono text-[var(--overlay)] hover:text-[var(--subtext)] transition-colors cursor-pointer flex-shrink-0"
+                title={diagnosticsOpen ? "Hide activity log" : "Show activity log"}
+                aria-expanded={diagnosticsOpen}
+                className={`flex items-center gap-1 text-[0.65rem] font-semibold border rounded-full pl-1.5 pr-2 py-0.5 transition-colors cursor-pointer flex-shrink-0 ${
+                  diagnosticsOpen
+                    ? "border-[var(--surface1)] bg-[var(--surface0)] text-[var(--text)]"
+                    : "border-[var(--surface0)] text-[var(--overlay)] hover:text-[var(--subtext)] hover:border-[var(--surface1)]"
+                }`}
               >
-                {"▸"} {logEntries.length}
+                <ChevronRight className={`size-3 transition-transform ${diagnosticsOpen ? "rotate-90" : ""}`} />
+                <ScrollText className="size-3" />
+                Log
+                <span className="font-mono opacity-70">{logEntries.length}</span>
+              </button>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                title="Settings"
+                aria-label="Settings"
+                className="flex items-center text-[var(--overlay)] border border-[var(--surface0)] rounded-full p-1 hover:text-[var(--text)] hover:border-[var(--surface1)] transition-colors cursor-pointer flex-shrink-0"
+              >
+                <GearIcon size={13} />
               </button>
               <button
                 onClick={() => room.leaveRoom()}
@@ -730,6 +753,39 @@ export function PTTPage() {
                 ← Leave
               </button>
             </div>
+
+            {/* Model download progress — joining a locked room can trigger
+                a multi-hundred-MB download, so surface it prominently. */}
+            {codec.state === "loading" && (
+              <div className="px-4 pt-2.5 flex-shrink-0">
+                <div className="rounded-lg border border-[var(--surface0)] bg-[var(--base)] px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Loader2 className="size-3 animate-spin text-[var(--tv-accent)] flex-shrink-0" />
+                    <span className="font-mono text-[0.65rem] text-[var(--subtext)] truncate">{codec.statusText}</span>
+                    <button
+                      onClick={codec.abortLoading}
+                      className="ml-auto text-[0.6rem] font-semibold text-[var(--overlay)] hover:text-[var(--red)] transition-colors cursor-pointer flex-shrink-0"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <Progress value={codec.progress} className="h-1.5" />
+                </div>
+              </div>
+            )}
+
+            {/* Models needed but not downloading — offer a way back in */}
+            {codec.state !== "loading" && !isPttReady && effectiveQuality && !codec.isQualityLoaded(effectiveQuality) && (
+              <div className="px-4 pt-2.5 flex-shrink-0">
+                <button
+                  onClick={() => setDownloadOpen(true)}
+                  className="w-full rounded-lg border border-[var(--surface0)] bg-[var(--base)] px-3 py-2 text-[0.68rem] font-semibold text-[var(--tv-accent)] hover:border-[var(--surface1)] transition-colors cursor-pointer"
+                >
+                  {qualityLabel(effectiveQuality)} models needed to talk here — download
+                </button>
+              </div>
+            )}
+
             {diagnosticsOpen && (
               <div className="px-4 pt-2 flex-shrink-0">{diagnosticsLogPanel("h-32")}</div>
             )}

@@ -17,6 +17,7 @@
     "worker:types:check": "wrangler types --config worker/wrangler.jsonc worker/worker-configuration.d.ts --check",
     "worker:dry-run": "wrangler deploy --config worker/wrangler.jsonc --dry-run --outdir .wrangler-dist",
     "audit": "npm audit --audit-level=low",
+    "social": "node scripts/gen-social.mjs",
     "deploy": "npm run build && cd dist && rm -f *.onnx && cd .. && wrangler pages deploy dist --project-name tinyvoice",
     "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc"
   },

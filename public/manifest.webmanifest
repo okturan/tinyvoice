@@ -1,0 +1,16 @@
+{
+  "name": "TinyVoice",
+  "short_name": "TinyVoice",
+  "description": "Neural speech at 25–100 bytes per second. Push-to-talk rooms and scannable voice QR codes, encoded and decoded entirely in your browser.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11111b",
+  "theme_color": "#1e1e2e",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
