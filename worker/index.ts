@@ -7,6 +7,8 @@ const MAX_DISPLAY_NAME_CODE_POINTS = 32;
 const MAX_RELAY_PAYLOAD_BYTES = 64 * 1024;
 const MAX_ROOM_CONNECTIONS = 64;
 const MAX_CONTROL_MESSAGE_CODE_UNITS = 1024;
+const HISTORY_RETENTION_MS = 60 * 60 * 1000;
+const MAX_HISTORY_MESSAGES = 1000;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/u;
 
 type RoomQuality = "50hz" | "25hz" | "12_5hz";
@@ -15,6 +17,8 @@ const VALID_QUALITIES = new Set<string>(["50hz", "25hz", "12_5hz"]);
 const QUALITY_BY_MAGIC: Record<number, RoomQuality> = { 1: "50hz", 2: "25hz", 3: "12_5hz" };
 /** Server→client relayed packets are wrapped: [0xFE][nameLen][name utf8][packet] */
 const RELAY_WRAP_MARKER = 0xfe;
+/** Persisted packets: [0xFD][sentAt f64 BE][nameLen][name utf8][packet] */
+const RELAY_HISTORY_MARKER = 0xfd;
 
 interface StoredRoom {
   count: number;
@@ -26,7 +30,14 @@ type StoredRooms = Record<string, StoredRoom>;
 
 interface SessionAttachment {
   name: string;
+  historySent: boolean;
 }
+
+type HistoryRow = {
+  created_at: number;
+  sender: string;
+  payload: ArrayBuffer;
+} & Record<string, ArrayBuffer | string | number | null>;
 
 function normalizeQuality(input: unknown): RoomQuality | null {
   return typeof input === "string" && VALID_QUALITIES.has(input)
@@ -98,10 +109,9 @@ function isStoredRoom(value: unknown): value is StoredRoom {
 function isCodecPacket(payload: ArrayBuffer): boolean {
   const bytes = new Uint8Array(payload);
   if (bytes.byteLength < 2) return false;
-  // 0xFE is reserved for the server→client sender wrap; refusing it at
-  // ingress keeps the wrap marker unambiguous on the wire. Real token
-  // streams never start with it (tokens are far below 0xFE00).
-  if (bytes[0] === RELAY_WRAP_MARKER) return false;
+  // 0xFD and 0xFE are reserved for server→client wrappers. Real token
+  // streams never start with either marker (tokens are far below 0xFD00).
+  if (bytes[0] === RELAY_HISTORY_MARKER || bytes[0] === RELAY_WRAP_MARKER) return false;
   if (bytes.byteLength % 2 === 0) return true;
   return bytes.byteLength >= 3 && bytes[0] !== undefined && bytes[0] >= 1 && bytes[0] <= 3;
 }
@@ -298,6 +308,22 @@ export class Room extends DurableObject<Env> {
   /** Cached room quality; undefined = not yet read from storage (hibernation-safe). */
   private cachedQuality: RoomQuality | null | undefined;
 
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS message_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at INTEGER NOT NULL,
+        sender TEXT NOT NULL,
+        payload BLOB NOT NULL
+      )
+    `);
+    this.ctx.storage.sql.exec(`
+      CREATE INDEX IF NOT EXISTS message_history_created_at
+      ON message_history(created_at)
+    `);
+  }
+
   private openSockets(exclude?: WebSocket): WebSocket[] {
     return this.ctx
       .getWebSockets()
@@ -347,13 +373,100 @@ export class Room extends DurableObject<Env> {
     return out.buffer;
   }
 
+  private wrapHistory(row: HistoryRow): ArrayBuffer {
+    const nameBytes = new TextEncoder().encode(row.sender);
+    const out = new Uint8Array(10 + nameBytes.length + row.payload.byteLength);
+    out[0] = RELAY_HISTORY_MARKER;
+    new DataView(out.buffer).setFloat64(1, row.created_at, false);
+    out[9] = nameBytes.length;
+    out.set(nameBytes, 10);
+    out.set(new Uint8Array(row.payload), 10 + nameBytes.length);
+    return out.buffer;
+  }
+
   private attachment(socket: WebSocket): SessionAttachment {
     const value: unknown = socket.deserializeAttachment();
     if (typeof value === "object" && value !== null) {
       const name = normalizeDisplayName((value as Partial<SessionAttachment>).name);
-      if (name) return { name };
+      if (name) {
+        return {
+          name,
+          historySent: (value as Partial<SessionAttachment>).historySent === true,
+        };
+      }
     }
-    return { name: "anon" };
+    return { name: "anon", historySent: false };
+  }
+
+  private pruneHistory(now = Date.now()): void {
+    this.ctx.storage.sql.exec(
+      "DELETE FROM message_history WHERE created_at <= ?",
+      now - HISTORY_RETENTION_MS,
+    );
+    this.ctx.storage.sql.exec(
+      `DELETE FROM message_history
+       WHERE id IN (
+         SELECT id FROM message_history
+         ORDER BY id DESC
+         LIMIT -1 OFFSET ?
+       )`,
+      MAX_HISTORY_MESSAGES,
+    );
+  }
+
+  private hasHistory(): boolean {
+    const row = [...this.ctx.storage.sql.exec<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM message_history",
+    )][0];
+    return (row?.count ?? 0) > 0;
+  }
+
+  private async scheduleHistoryAlarm(): Promise<void> {
+    const row = [...this.ctx.storage.sql.exec<{ created_at: number | null }>(
+      "SELECT MIN(created_at) AS created_at FROM message_history",
+    )][0];
+    if (typeof row?.created_at === "number") {
+      await this.ctx.storage.setAlarm(
+        Math.max(Date.now() + 1000, row.created_at + HISTORY_RETENTION_MS),
+      );
+    } else {
+      await this.ctx.storage.deleteAlarm();
+    }
+  }
+
+  private async storeHistory(socket: WebSocket, payload: ArrayBuffer): Promise<void> {
+    const now = Date.now();
+    this.pruneHistory(now);
+    this.ctx.storage.sql.exec(
+      "INSERT INTO message_history (created_at, sender, payload) VALUES (?, ?, ?)",
+      now,
+      this.attachment(socket).name,
+      payload,
+    );
+    this.pruneHistory(now);
+    await this.scheduleHistoryAlarm();
+  }
+
+  private sendHistory(socket: WebSocket): void {
+    this.pruneHistory();
+    const rows = this.ctx.storage.sql.exec<HistoryRow>(
+      `SELECT created_at, sender, payload
+       FROM (
+         SELECT id, created_at, sender, payload
+         FROM message_history
+         ORDER BY id DESC
+         LIMIT ?
+       )
+       ORDER BY id ASC`,
+      MAX_HISTORY_MESSAGES,
+    );
+    for (const row of rows) {
+      try {
+        socket.send(this.wrapHistory(row));
+      } catch {
+        return;
+      }
+    }
   }
 
   private broadcastUsers(exclude?: WebSocket): void {
@@ -421,7 +534,7 @@ export class Room extends DurableObject<Env> {
     const client = pair[0];
     const server = pair[1];
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ name: "anon" } satisfies SessionAttachment);
+    server.serializeAttachment({ name: "anon", historySent: false } satisfies SessionAttachment);
 
     try {
       server.send(this.roomInfoMessage(await this.getQuality()));
@@ -444,16 +557,24 @@ export class Room extends DurableObject<Env> {
         if (typeof parsed !== "object" || parsed === null || (parsed as { type?: unknown }).type !== "hello") {
           return;
         }
-        const hello = parsed as { name?: unknown; quality?: unknown };
+        const hello = parsed as { name?: unknown; quality?: unknown; history?: unknown };
         const name = normalizeDisplayName(hello.name);
         if (!name) return;
-        socket.serializeAttachment({ name } satisfies SessionAttachment);
+        const attachment = this.attachment(socket);
+        const shouldSendHistory = hello.history === true && !attachment.historySent;
+        socket.serializeAttachment({
+          name,
+          historySent: attachment.historySent || shouldSendHistory,
+        } satisfies SessionAttachment);
         this.broadcastUsers();
 
         // First arrival with a quality locks the room to it.
         const offered = normalizeQuality(hello.quality);
         if (offered && (await this.getQuality()) === null) {
           await this.setQuality(offered);
+        }
+        if (shouldSendHistory) {
+          this.sendHistory(socket);
         }
       } catch {
         // Text frames are control messages only; malformed JSON is ignored.
@@ -486,13 +607,14 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    await this.storeHistory(socket, message);
     this.broadcastPayload(socket, this.wrapPayload(socket, message));
   }
 
   async webSocketClose(socket: WebSocket): Promise<void> {
     this.broadcastUsers(socket);
     const remaining = this.openSockets(socket).length;
-    if (remaining === 0) await this.setQuality(null);
+    if (remaining === 0 && !this.hasHistory()) await this.setQuality(null);
     await this.notifyLobby(remaining);
   }
 
@@ -504,8 +626,16 @@ export class Room extends DurableObject<Env> {
     }));
     this.broadcastUsers(socket);
     const remaining = this.openSockets(socket).length;
-    if (remaining === 0) await this.setQuality(null);
+    if (remaining === 0 && !this.hasHistory()) await this.setQuality(null);
     await this.notifyLobby(remaining);
+  }
+
+  async alarm(): Promise<void> {
+    this.pruneHistory();
+    await this.scheduleHistoryAlarm();
+    if (!this.hasHistory() && this.openSockets().length === 0) {
+      await this.setQuality(null);
+    }
   }
 }
 

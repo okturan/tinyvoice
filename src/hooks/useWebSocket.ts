@@ -25,7 +25,12 @@ export interface UseWebSocketReturn {
 }
 
 export function useWebSocket(callbacks: {
-  onBinaryMessage?: (data: ArrayBuffer, sender: string | null) => void;
+  onBinaryMessage?: (
+    data: ArrayBuffer,
+    sender: string | null,
+    sentAt: number | null,
+    historical: boolean,
+  ) => void;
   onRelayError?: (message: RelayErrorMessage) => void;
   onConnected?: (room: string) => void;
   onDisconnected?: () => void;
@@ -86,6 +91,7 @@ export function useWebSocket(callbacks: {
         const hello: HelloMessage = {
           type: "hello",
           name: username,
+          history: true,
           ...(quality ? { quality } : {}),
         };
         ws.send(JSON.stringify(hello));
@@ -105,8 +111,8 @@ export function useWebSocket(callbacks: {
           return;
         }
         if (e.data instanceof ArrayBuffer) {
-          const { sender, packet } = unwrapRelayPayload(e.data);
-          callbacksRef.current.onBinaryMessage?.(packet, sender);
+          const { sender, packet, sentAt, historical } = unwrapRelayPayload(e.data);
+          callbacksRef.current.onBinaryMessage?.(packet, sender, sentAt, historical);
         }
       };
 
@@ -165,6 +171,7 @@ export function useWebSocket(callbacks: {
       const hello: HelloMessage = {
         type: "hello",
         name: username,
+        history: true,
         ...(currentQuality.current ? { quality: currentQuality.current } : {}),
       };
       ws.send(JSON.stringify(hello));

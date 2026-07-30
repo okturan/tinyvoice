@@ -7,6 +7,7 @@ import {
   parseServerMessage,
   shouldReconnect,
   unwrapRelayPayload,
+  RELAY_HISTORY_MARKER,
   RELAY_WRAP_MARKER,
 } from "@/lib/ws/relay";
 
@@ -79,6 +80,25 @@ describe("relay payload unwrapping", () => {
 
     const result = unwrapRelayPayload(wrapped.buffer);
     expect(result.sender).toBe("Ada");
+    expect(result.historical).toBe(false);
+    expect(result.sentAt).toBeNull();
+    expect(new Uint8Array(result.packet)).toEqual(packet);
+  });
+
+  it("extracts timestamps and senders from persisted history payloads", () => {
+    const name = new TextEncoder().encode("Grace");
+    const packet = new Uint8Array([3, 9, 0]);
+    const wrapped = new Uint8Array(10 + name.length + packet.length);
+    wrapped[0] = RELAY_HISTORY_MARKER;
+    new DataView(wrapped.buffer).setFloat64(1, 1_786_000_000_123, false);
+    wrapped[9] = name.length;
+    wrapped.set(name, 10);
+    wrapped.set(packet, 10 + name.length);
+
+    const result = unwrapRelayPayload(wrapped.buffer);
+    expect(result.sender).toBe("Grace");
+    expect(result.historical).toBe(true);
+    expect(result.sentAt).toBe(1_786_000_000_123);
     expect(new Uint8Array(result.packet)).toEqual(packet);
   });
 
@@ -86,6 +106,7 @@ describe("relay payload unwrapping", () => {
     const packet = new Uint8Array([2, 7, 0]);
     const result = unwrapRelayPayload(packet.buffer);
     expect(result.sender).toBeNull();
+    expect(result.historical).toBe(false);
     expect(new Uint8Array(result.packet)).toEqual(packet);
   });
 

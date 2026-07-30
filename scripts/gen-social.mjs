@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import QRCode from "qrcode";
 import { writeFileSync } from "node:fs";
 
 const OUT = new URL("../public/", import.meta.url).pathname;
@@ -30,25 +31,22 @@ function mic(cx, cy, s, color, stroke) {
     </g>`;
 }
 
-/* ── deterministic byte stream for the hex row ── */
-const mul = (a) => () => {
-  a |= 0; a = (a + 0x6d2b79f5) | 0;
-  let t = Math.imul(a ^ (a >>> 15), 1 | a);
-  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
-const rng = mul(0x54696e79);
-// 17 bytes + the magic-byte header is what fits inside the panel at 21px.
-const BYTES = Array.from({ length: 17 }, () =>
-  Math.floor(rng() * 256).toString(16).padStart(2, "0"),
-);
+const PACKET_HEX = [
+  "03", "43", "09", "b5", "1b", "15", "0c", "85",
+  "08", "47", "1b", "54", "14", "44", "1d", "cf",
+  "01", "53", "15", "f6", "14", "89", "14",
+];
+const PACKET_BYTES = Buffer.from(PACKET_HEX.join(""), "hex");
+const PLAY_URL =
+  `https://tinyvoice.app/qr?v=${encodeURIComponent(PACKET_BYTES.toString("base64"))}`;
+const QR = QRCode.create(PLAY_URL, { errorCorrectionLevel: "M" });
 
 /** Hex row with the comet play head, the app's signature visual. */
 function hexRow(x, y, size) {
   const step = size * 1.72;
-  const head = 11;
-  let out = `<text x="${x}" y="${y}" font-family="${MONO}" font-size="${size}" font-weight="700" fill="${C.accent}">02</text>`;
-  BYTES.forEach((b, i) => {
+  const head = 14;
+  let out = "";
+  PACKET_HEX.forEach((b, i) => {
     const d = head - i;
     let fill = "#3a3d52";           // unplayed
     let weight = "600";
@@ -57,39 +55,24 @@ function hexRow(x, y, size) {
     else if (d === 2) fill = "#79b98c";
     else if (d <= 4) fill = "#6b9b87";
     else if (d > 0) fill = C.subtext; // already played
-    out += `<text x="${x + step * (i + 1)}" y="${y}" font-family="${MONO}" font-size="${size}" font-weight="${weight}" fill="${fill}">${b}</text>`;
+    if (i === 0) { fill = C.accent; weight = "700"; }
+    out += `<text x="${x + step * i}" y="${y}" font-family="${MONO}" font-size="${size}" font-weight="${weight}" fill="${fill}">${b}</text>`;
   });
   return out;
 }
 
-/** A believable QR block: three finder patterns + seeded noise. */
-function qr(x, y, px, modules = 25) {
-  const r = mul(0x7402);
+/** The real TinyVoice playback URL for PACKET_HEX, rendered with a quiet zone. */
+function qr(x, y, px, margin = 4) {
+  const modules = QR.modules.size;
   let cells = "";
-  const inFinder = (cx, cy) =>
-    (cx < 8 && cy < 8) || (cx >= modules - 8 && cy < 8) || (cx < 8 && cy >= modules - 8);
   for (let cy = 0; cy < modules; cy++) {
     for (let cx = 0; cx < modules; cx++) {
-      if (!inFinder(cx, cy) && r() < 0.46) {
-        cells += `<rect x="${x + cx * px}" y="${y + cy * px}" width="${px}" height="${px}"/>`;
+      if (QR.modules.data[cy * modules + cx]) {
+        cells += `<rect x="${x + (cx + margin) * px}" y="${y + (cy + margin) * px}" width="${px}" height="${px}"/>`;
       }
     }
   }
-  const finder = (fx, fy) => {
-    let out = "";
-    for (let cy = 0; cy < 7; cy++) {
-      for (let cx = 0; cx < 7; cx++) {
-        const ring = cx === 0 || cy === 0 || cx === 6 || cy === 6;
-        const core = cx >= 2 && cx <= 4 && cy >= 2 && cy <= 4;
-        if (ring || core) {
-          out += `<rect x="${x + (fx + cx) * px}" y="${y + (fy + cy) * px}" width="${px}" height="${px}"/>`;
-        }
-      }
-    }
-    return out;
-  };
-  cells += finder(0, 0) + finder(modules - 7, 0) + finder(0, modules - 7);
-  return `<g fill="#11111b">${cells}</g>`;
+  return `<g fill="#11111b" shape-rendering="crispEdges">${cells}</g>`;
 }
 
 /* ══════════ OG / Twitter card: 1200x630 ══════════ */
@@ -119,12 +102,12 @@ const og = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" vi
   <!-- token data panel -->
   <rect x="64" y="452" width="700" height="118" rx="14" fill="${C.mantle}" stroke="${C.surface0}" stroke-width="1.5"/>
   <text x="88" y="484" font-family="${MONO}" font-size="14" font-weight="700" fill="${C.overlay}" letter-spacing="2.4">TOKEN DATA</text>
-  ${hexRow(88, 522, 21)}
-  <text x="88" y="552" font-family="${MONO}" font-size="15" fill="${C.overlay}">2.6s of speech · <tspan fill="${C.green}">129 bytes</tspan> · 25hz</text>
+  ${hexRow(88, 522, 16)}
+  <text x="88" y="552" font-family="${MONO}" font-size="15" fill="${C.overlay}">0.9s of speech · <tspan fill="${C.green}">23 bytes</tspan> · 12.5hz</text>
 
   <!-- QR card -->
   <rect x="836" y="196" width="300" height="300" rx="20" fill="#ffffff"/>
-  ${qr(866, 226, 9.6)}
+  ${qr(863, 223, 6)}
 
   <!-- footer -->
   <text x="836" y="546" font-family="${MONO}" font-size="22" font-weight="600" fill="${C.overlay}">tinyvoice.app</text>

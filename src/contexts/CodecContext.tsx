@@ -10,7 +10,11 @@ import {
 } from "react";
 import { codec } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
-import { clearModelCache as clearCache, pruneStaleRevisions } from "@/lib/model-cache";
+import {
+  clearModelCache as clearCache,
+  pruneStaleRevisions,
+  requestPersistentModelStorage,
+} from "@/lib/model-cache";
 import { qualityLabel } from "@/lib/format";
 
 export type CodecState = "idle" | "loading" | "ready" | "error";
@@ -119,6 +123,7 @@ export function CodecProvider({ children }: { children: ReactNode }) {
     abortControllerRef.current = controller;
 
     try {
+      await requestPersistentModelStorage();
       await codec.loadModelSet(
         missing,
         (info) => {
@@ -128,14 +133,17 @@ export function CodecProvider({ children }: { children: ReactNode }) {
         controller.signal,
       );
 
+      const cached = (await Promise.all(
+        missing.map((item) => codec.isCoreModelsCached(item)),
+      )).every(Boolean);
       setState("ready");
-      setStatusText(
-        `${qualities.map(qualityLabel).join(", ")} loaded`,
-      );
+      setStatusText(cached
+        ? `${qualities.map(qualityLabel).join(", ")} loaded`
+        : `${qualities.map(qualityLabel).join(", ")} loaded for this session; cache unavailable`);
       setLoadedQualities((current) =>
         Array.from(new Set([...current, ...missing])),
       );
-      setModelsCached(true);
+      setModelsCached(cached);
       return true;
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return false;

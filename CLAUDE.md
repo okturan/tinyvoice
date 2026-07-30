@@ -73,6 +73,7 @@ public/
 - **Split encoder model** — shared WavLM encoder.onnx (595MB) + per-quality compressor + decoder
 - **iSTFT in TypeScript** — Cooley-Tukey radix-2 iFFT + overlap-add. Math-critical, do not modify.
 - **Magic byte wire format** — 0x01=50hz, 0x02=25hz, 0x03=12.5hz
+- **One-hour room history** — the Room DO persists every relayed packet in SQLite (`message_history`) and replays the backlog to each socket that sends `hello {history:true}`, once per socket. Retention is 1h / 1000 messages, pruned on write and by an alarm set to the oldest entry's expiry. History frames use a distinct marker: `[0xFD][sentAt f64 BE][nameLen][name][packet]`. A room's quality lock now survives an empty room while history remains, so replayed packets stay decodable.
 - **Room quality lock** — a room's first participant locks its quality (hello message or first packet's magic byte; stored in the Room DO, cleared when the room empties). The relay rejects mismatched packets with a `{type:"error"}` control message and wraps relayed packets with the sender name: `[0xFE][nameLen][name utf8][packet]`. `0xFE` is reserved on the wire — the relay refuses client packets starting with it, so the wrap marker is unambiguous.
 - **IndexedDB caching** — models cached after first download ('focalcodec-models' store)
 - **AudioWorklet** — replaced deprecated ScriptProcessorNode for recording

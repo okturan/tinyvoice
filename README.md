@@ -101,7 +101,7 @@ TinyVoice is an open demonstration, not a private communications product:
 - There is no account system, room password, authorization layer, or end-to-end encryption.
 - Anyone who knows a valid room identifier can connect, and `/rooms` intentionally lists active room names and connection counts.
 - Display names are peer-provided labels, not verified identities.
-- Room WebSockets are ephemeral. The lobby persists room counts and timestamps in Durable Object storage so stale entries can be cleaned up; the project therefore does not claim that the relay stores nothing.
+- **The relay stores voice.** Every packet sent to a room is written to that room's Durable Object storage and replayed in full to anyone who joins later, including someone who was not present when it was spoken. Entries are deleted one hour after they are sent (or once a room exceeds 1,000 retained messages), enforced on write and by a Durable Object alarm, so a room's stored audio survives the room emptying and outlives every participant's session. The lobby separately persists room counts and timestamps so stale entries can be cleaned up.
 - Room identifiers are normalized, bounded, and canonicalized. Display names and their control frames are normalized and bounded. Each room is limited to 64 connections.
 - Binary relay payloads are codec-shape checked and limited to 64 KiB, but there is no per-user rate limit.
 

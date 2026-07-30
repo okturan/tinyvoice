@@ -49,6 +49,23 @@ const LOG_COLORS: Record<LogEntry["type"], string> = {
   name: "text-[var(--tv-accent)] font-medium",
 };
 
+const MAX_ROOM_MESSAGES = 1000;
+
+/**
+ * Cheap content fingerprint (FNV-1a). A dropped connection reconnects
+ * without clearing the list, and the relay replays the whole backlog to
+ * the new socket — so replayed messages are matched against what's
+ * already shown instead of appearing twice.
+ */
+function packetFingerprint(packet: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < packet.length; i++) {
+    hash ^= packet[i];
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${packet.length}:${(hash >>> 0).toString(36)}`;
+}
+
 let logId = 0;
 let messageId = 0;
 
@@ -79,6 +96,7 @@ export function PTTPage() {
   const playbackQueueRef = useRef<Promise<void>>(Promise.resolve());
   const playbackGenerationRef = useRef(0);
   const mountedRef = useRef(true);
+  const roomModelAttemptRef = useRef<string | null>(null);
   const roomQuality = (room.roomQuality as Quality | null) ?? null;
   const effectiveQuality = roomQuality ?? codec.activeQuality;
   const isPttReady =
@@ -101,7 +119,7 @@ export function PTTPage() {
     setMessages([]);
     setPlayingMessageId(null);
     setLoadingMessageId(null);
-  }, [room.isConnected, room.currentRoom, stopAudioPlayback]);
+  }, [room.currentRoom, stopAudioPlayback]);
 
   const addLog = useCallback((message: string, type: LogEntry["type"] = "dim", hexData?: Uint8Array, hexType?: "sent" | "recv") => {
     setLogEntries(prev => {
@@ -135,17 +153,26 @@ export function PTTPage() {
 
   // ── Adopt the room's locked quality ──
   useEffect(() => {
-    if (!room.isConnected || !roomQuality) return;
+    if (!room.isConnected || !room.currentRoom || !roomQuality) {
+      roomModelAttemptRef.current = null;
+      return;
+    }
     if (codec.activeQuality !== roomQuality) {
       codec.setActiveQuality(roomQuality);
       addLog(`Room is locked to ${qualityLabel(roomQuality)}`, "info");
     }
-    if (!codec.isQualityLoaded(roomQuality) && codec.state !== "loading") {
-      addLog(`Downloading ${qualityLabel(roomQuality)} models for this room...`, "info");
-      codec.loadModels(roomQuality).catch((e: unknown) => {
-        addLog("Model load: " + (e instanceof Error ? e.message : String(e)), "warn");
-      });
-    }
+    if (codec.isQualityLoaded(roomQuality) || codec.state === "loading") return;
+
+    // A failed mobile load must not turn into an automatic download loop as
+    // CodecContext re-renders. Try once per room join; manual retry remains
+    // available through the codec controls.
+    const attemptKey = `${room.currentRoom}:${roomQuality}`;
+    if (roomModelAttemptRef.current === attemptKey) return;
+    roomModelAttemptRef.current = attemptKey;
+    addLog(`Downloading ${qualityLabel(roomQuality)} models for this room...`, "info");
+    codec.loadModels(roomQuality).catch((e: unknown) => {
+      addLog("Model load: " + (e instanceof Error ? e.message : String(e)), "warn");
+    });
   }, [room.isConnected, roomQuality, codec, addLog]);
 
   // ── Relay rejections ──
@@ -164,8 +191,8 @@ export function PTTPage() {
 
   const prevUserCount = useRef(room.userCount);
   useEffect(() => {
+    stats.setUserCount(room.isConnected ? room.userCount : 0);
     if (room.isConnected && room.userCount !== prevUserCount.current) {
-      stats.setUserCount(room.userCount);
       addLog(`${room.userCount} user${room.userCount !== 1 ? "s" : ""} in room`, "dim");
     }
     prevUserCount.current = room.userCount;
@@ -231,27 +258,46 @@ export function PTTPage() {
   }, [playingMessageId, playMessage, stopAudioPlayback]);
 
   // ── Decode incoming ──
-  const handleDecode = useCallback((data: ArrayBuffer, sender: string | null) => {
+  const handleDecode = useCallback((
+    data: ArrayBuffer,
+    sender: string | null,
+    sentAt: number | null,
+    historical: boolean,
+  ) => {
     const packet = new Uint8Array(data);
     stats.addRecv(packet.length);
     stats.setLastRecv(packet.length);
-    addLog(`Received ${fmt(packet.length)} from ${sender ?? "anon"}`, "recv", packet, "recv");
+    if (!historical) {
+      addLog(`Received ${fmt(packet.length)} from ${sender ?? "anon"}`, "recv", packet, "recv");
+    }
 
     const parsed = codecService.parsePacket(packet);
     const message: VoiceMessage = {
       id: ++messageId,
-      dir: "recv",
+      dir: historical && !!savedUsername && sender === savedUsername ? "sent" : "recv",
       sender: sender ?? "anon",
       packet,
       quality: parsed?.hasMagicByte ? parsed.quality : null,
       duration: parsed
         ? codecService.estimateDuration(parsed.tokenBytes.length / 2, parsed.quality)
         : null,
-      time: Date.now(),
+      time: sentAt ?? Date.now(),
+      historical,
+      fp: packetFingerprint(packet),
     };
-    setMessages((prev) => [...prev, message].slice(-100));
-    playMessage(message, { announce: true });
-  }, [stats, addLog, playMessage]);
+
+    setMessages((prev) =>
+      // A reconnect replays the backlog into a list we never cleared, so
+      // drop anything already on screen. Live packets are always new.
+      historical && prev.some((m) => m.fp === message.fp)
+        ? prev
+        : [...prev, message].slice(-MAX_ROOM_MESSAGES),
+    );
+
+    if (!historical) {
+      playMessage(message, { announce: true });
+    }
+  }, [stats, addLog, playMessage, savedUsername]);
 
   useEffect(() => room.onPacketReceived(handleDecode), [room, handleDecode]);
 
@@ -299,8 +345,10 @@ export function PTTPage() {
           quality: effectiveQuality,
           duration,
           time: Date.now(),
+          // Lets a reconnect's replayed backlog dedupe against it.
+          fp: packetFingerprint(packet),
         },
-      ].slice(-100));
+      ].slice(-MAX_ROOM_MESSAGES));
     } catch (e) {
       addLog("Encode: " + (e instanceof Error ? e.message : String(e)), "warn");
     }
@@ -405,7 +453,9 @@ export function PTTPage() {
             className="group flex items-center gap-2 w-full px-1 py-0.5 rounded cursor-pointer hover:bg-[var(--mantle)] transition-colors text-left">
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${r.count > 0 ? "bg-[var(--green)]" : "bg-[var(--surface2)] group-hover:bg-[var(--tv-accent)]"} transition-colors`} />
             <span className="font-mono text-[0.75rem] text-[var(--subtext)] group-hover:text-[var(--text)] transition-colors">{r.name}</span>
-            {r.count > 0 && <span className="text-[0.6rem] text-[var(--green)] font-mono">{r.count}</span>}
+            <span className={`text-[0.58rem] font-mono ${
+              r.count > 0 ? "text-[var(--green)]" : "text-[var(--overlay)]"
+            }`}>{r.count} online</span>
             {r.quality && (
               <span className={`ml-auto text-[0.55rem] font-mono px-1.5 py-px rounded ${
                 r.count > 0
@@ -416,6 +466,10 @@ export function PTTPage() {
           </button>
         ))}
       </div>
+      <p className="mt-2 text-[0.58rem] leading-snug text-[var(--overlay)]">
+        Rooms are public. The relay keeps the last hour of voice and replays it
+        to anyone who joins.
+      </p>
     </div>
   );
 

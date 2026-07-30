@@ -33,6 +33,8 @@ export interface HelloMessage {
   type: "hello";
   name: string;
   quality?: RelayQuality;
+  /** Opt in to the room's persisted one-hour voice-message backlog. */
+  history?: true;
 }
 
 /** Server broadcasts this when the user list changes */
@@ -72,12 +74,34 @@ export interface LobbyRoom {
  * start with it — so a leading 0xFE unambiguously means "wrapped".
  */
 export const RELAY_WRAP_MARKER = 0xfe;
+/** Persisted packets: [0xFD][sentAt f64 BE][nameLen][sender utf8][packet]. */
+export const RELAY_HISTORY_MARKER = 0xfd;
 
 export function unwrapRelayPayload(data: ArrayBuffer): {
   sender: string | null;
   packet: ArrayBuffer;
+  sentAt: number | null;
+  historical: boolean;
 } {
   const bytes = new Uint8Array(data);
+  if (bytes.byteLength >= 10 && bytes[0] === RELAY_HISTORY_MARKER) {
+    const sentAt = new DataView(data).getFloat64(1, false);
+    const nameLength = bytes[9];
+    if (Number.isFinite(sentAt) && bytes.byteLength >= 10 + nameLength) {
+      let sender: string | null = null;
+      try {
+        sender = new TextDecoder().decode(bytes.subarray(10, 10 + nameLength)) || null;
+      } catch {
+        sender = null;
+      }
+      return {
+        sender,
+        packet: data.slice(10 + nameLength),
+        sentAt,
+        historical: true,
+      };
+    }
+  }
   if (bytes.byteLength >= 2 && bytes[0] === RELAY_WRAP_MARKER) {
     const nameLength = bytes[1];
     if (bytes.byteLength >= 2 + nameLength) {
@@ -87,11 +111,16 @@ export function unwrapRelayPayload(data: ArrayBuffer): {
       } catch {
         sender = null;
       }
-      return { sender, packet: data.slice(2 + nameLength) };
+      return {
+        sender,
+        packet: data.slice(2 + nameLength),
+        sentAt: null,
+        historical: false,
+      };
     }
   }
   // Unwrapped (older worker) — treat the whole payload as the packet.
-  return { sender: null, packet: data };
+  return { sender: null, packet: data, sentAt: null, historical: false };
 }
 
 // ── Helpers ────────────────────────────────────────────

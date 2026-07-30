@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectStaleKeys } from "@/lib/model-cache";
+import { isChunkedCacheMetadata, selectStaleKeys } from "@/lib/model-cache";
 import { MODEL_REVISION } from "@/lib/constants";
 
 const PREFIX = `${MODEL_REVISION}:`;
@@ -32,5 +32,25 @@ describe("selectStaleKeys", () => {
 
   it("handles an empty store", () => {
     expect(selectStaleKeys([])).toEqual([]);
+  });
+});
+
+describe("chunked cache metadata validation", () => {
+  it("accepts internally consistent 16 MiB chunk metadata", () => {
+    expect(isChunkedCacheMetadata({
+      format: "chunked-v1",
+      byteLength: 16 * 1024 * 1024 + 1,
+      chunkCount: 2,
+    })).toBe(true);
+  });
+
+  it.each([
+    null,
+    {},
+    { format: "chunked-v1", byteLength: 0, chunkCount: 0 },
+    { format: "chunked-v1", byteLength: 16 * 1024 * 1024 + 1, chunkCount: 1 },
+    { format: "chunked-v2", byteLength: 10, chunkCount: 1 },
+  ])("rejects malformed metadata %#", (value) => {
+    expect(isChunkedCacheMetadata(value)).toBe(false);
   });
 });

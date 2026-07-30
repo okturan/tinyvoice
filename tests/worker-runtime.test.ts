@@ -96,6 +96,20 @@ function unwrap(data: ArrayBuffer): { sender: string; packet: Uint8Array } {
   return { sender, packet: bytes.subarray(2 + nameLength) };
 }
 
+/** Mirrors [0xFD][sentAt f64 BE][nameLen][name][packet] persisted history. */
+function unwrapHistory(data: ArrayBuffer): {
+  sentAt: number;
+  sender: string;
+  packet: Uint8Array;
+} {
+  const bytes = new Uint8Array(data);
+  expect(bytes[0]).toBe(0xfd);
+  const sentAt = new DataView(data).getFloat64(1, false);
+  const nameLength = bytes[9];
+  const sender = new TextDecoder().decode(bytes.subarray(10, 10 + nameLength));
+  return { sentAt, sender, packet: bytes.subarray(10 + nameLength) };
+}
+
 async function openSocket(room: string): Promise<{
   socket: WebSocket;
   roomInfo: RoomPayload;
@@ -229,11 +243,68 @@ describe("Room WebSocket Durable Object", () => {
     first.socket.close(1000, "done");
     await expectRoomList([]);
 
-    // The lock clears once the room empties.
+    // The packet and its codec lock survive an empty room for one hour.
     const reopened = await openSocket("café");
-    expect(reopened.roomInfo).toEqual({ type: "room", quality: null });
+    expect(reopened.roomInfo).toEqual({ type: "room", quality: "50hz" });
+    const backlog = nextBinary(reopened.socket);
+    reopened.socket.send(JSON.stringify({ type: "hello", name: "Ada", history: true }));
+    const restored = unwrapHistory(await backlog);
+    expect(restored.sender).toBe("Ada");
+    expect(restored.packet).toEqual(payload);
+    expect(restored.sentAt).toBeGreaterThan(0);
     reopened.socket.close(1000, "done");
     await expectRoomList([]);
+
+    // Once the one-hour retention period has elapsed, both history and the
+    // retained codec lock are removed.
+    const roomObject = env.ROOMS.getByName("café");
+    await runInDurableObject(roomObject, (_instance, state) => {
+      state.storage.sql.exec(
+        "UPDATE message_history SET created_at = ?",
+        Date.now() - 60 * 60 * 1000 - 1,
+      );
+    });
+    expect(await runDurableObjectAlarm(roomObject)).toBe(true);
+    const expired = await openSocket("café");
+    expect(expired.roomInfo).toEqual({ type: "room", quality: null });
+    let expiredHistoryDelivered = false;
+    const markExpiredHistory = (event: MessageEvent) => {
+      if (event.data instanceof ArrayBuffer) expiredHistoryDelivered = true;
+    };
+    expired.socket.addEventListener("message", markExpiredHistory);
+    expired.socket.send(JSON.stringify({ type: "hello", name: "Ada", history: true }));
+    await scheduler.wait(5);
+    expect(expiredHistoryDelivered).toBe(false);
+    expired.socket.close(1000, "done");
+    await expectRoomList([]);
+  });
+
+  it("replays the backlog once per socket, so renaming does not resend it", async () => {
+    const speaker = await openSocket("replay-once");
+    speaker.socket.send(JSON.stringify({ type: "hello", name: "Ada", quality: "25hz" }));
+    await scheduler.wait(5);
+    speaker.socket.send(new Uint8Array([2, 7, 0]).buffer);
+    await scheduler.wait(5);
+
+    // Joining replays the stored packet exactly once.
+    const listener = await openSocket("replay-once");
+    const backlog = nextBinary(listener.socket);
+    listener.socket.send(JSON.stringify({ type: "hello", name: "Grace", history: true }));
+    expect(unwrapHistory(await backlog).packet).toEqual(new Uint8Array([2, 7, 0]));
+
+    // A rename carries history:true too, but the backlog must not repeat.
+    let resent = false;
+    const markResent = (event: MessageEvent) => {
+      if (event.data instanceof ArrayBuffer) resent = true;
+    };
+    listener.socket.addEventListener("message", markResent);
+    listener.socket.send(JSON.stringify({ type: "hello", name: "Grace 2", history: true }));
+    await scheduler.wait(10);
+    expect(resent).toBe(false);
+    listener.socket.removeEventListener("message", markResent);
+
+    speaker.socket.close(1000, "done");
+    listener.socket.close(1000, "done");
   });
 
   it("locks the room from the first hello that carries a quality", async () => {
@@ -288,12 +359,15 @@ describe("Room WebSocket Durable Object", () => {
     invalid.socket.send(new Uint8Array([9, 1, 0]).buffer);
     expect((await invalidClose).code).toBe(1003);
 
-    // 0xFE is reserved for the sender wrap; even a well-formed
-    // even-length payload starting with it must be refused at ingress.
+    // 0xFD and 0xFE are reserved for the history and live sender wrappers.
     const reserved = await openSocket("reserved-marker");
     const reservedClose = nextClose(reserved.socket);
     reserved.socket.send(new Uint8Array([0xfe, 3, 65, 100]).buffer);
     expect((await reservedClose).code).toBe(1003);
+    const reservedHistory = await openSocket("reserved-history-marker");
+    const reservedHistoryClose = nextClose(reservedHistory.socket);
+    reservedHistory.socket.send(new Uint8Array([0xfd, 3, 65, 100]).buffer);
+    expect((await reservedHistoryClose).code).toBe(1003);
     receiver.socket.close(1000, "done");
   });
 

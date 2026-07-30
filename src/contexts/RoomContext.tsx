@@ -19,7 +19,12 @@ import {
   type RelayQuality,
 } from "@/lib/ws/relay";
 
-type PacketHandler = (data: ArrayBuffer, sender: string | null) => void;
+type PacketHandler = (
+  data: ArrayBuffer,
+  sender: string | null,
+  sentAt: number | null,
+  historical: boolean,
+) => void;
 type RelayErrorHandler = (message: RelayErrorMessage) => void;
 
 interface RoomContextValue {
@@ -64,9 +69,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const { isConnected, connect, disconnect, send, updateName, users, userCount, roomQuality } =
     useWebSocket({
-      onBinaryMessage: (data, sender) => {
+      onBinaryMessage: (data, sender, sentAt, historical) => {
         for (const handler of packetHandlers.current) {
-          handler(data, sender);
+          handler(data, sender, sentAt, historical);
         }
       },
       onRelayError: (message) => {

@@ -13,6 +13,10 @@ export interface VoiceMessage {
   quality: Quality | null;
   duration: number | null;
   time: number;
+  /** Replayed from the room's stored backlog rather than heard live. */
+  historical?: boolean;
+  /** Content fingerprint — dedupes a backlog replayed after a reconnect. */
+  fp?: string;
 }
 
 interface MessageListProps {
@@ -54,19 +58,25 @@ export function MessageList({ messages, playingId, loadingId, onPlay }: MessageL
           <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
           <line x1="12" x2="12" y1="19" y2="22" />
         </svg>
-        <span className="text-[0.7rem]">Voice messages appear here</span>
+        <span className="text-[0.7rem]">Voice messages from the last hour appear here</span>
       </div>
     );
   }
 
+  // Everything up to and including this index was replayed from storage.
+  const lastHistoricalIndex = messages.reduce(
+    (acc, message, index) => (message.historical ? index : acc),
+    -1,
+  );
+
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col gap-1.5 p-3">
-        {messages.map((message) => {
+        {messages.map((message, index) => {
           const mine = message.dir === "sent";
           const playing = playingId === message.id;
           const loading = loadingId === message.id;
-          return (
+          const row = (
             <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[85%] rounded-lg border px-2.5 py-1.5 ${
@@ -128,6 +138,20 @@ export function MessageList({ messages, playingId, loadingId, onPlay }: MessageL
                   open={openHexIds.has(message.id)}
                   showTrigger={false}
                 />
+              </div>
+            </div>
+          );
+
+          if (index !== lastHistoricalIndex) return row;
+          return (
+            <div key={message.id} className="contents">
+              {row}
+              <div className="flex items-center gap-2 px-1 py-0.5" aria-hidden="true">
+                <div className="h-px flex-1 bg-[var(--surface0)]" />
+                <span className="text-[0.55rem] uppercase tracking-wider text-[var(--overlay)]">
+                  replayed from the last hour
+                </span>
+                <div className="h-px flex-1 bg-[var(--surface0)]" />
               </div>
             </div>
           );
