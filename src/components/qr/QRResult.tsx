@@ -40,7 +40,7 @@ export default function QRResult({
   fillHex = false,
 }: QRResultProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+  const [urlCopyState, setUrlCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [hexCopyState, setHexCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [playing, setPlaying] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -81,7 +81,7 @@ export default function QRResult({
     setPreviewProgress(0);
     setPreviewStatus("");
     setDecoderOverride(null);
-    setCopied(false);
+    setUrlCopyState("idle");
     setHexCopyState("idle");
 
     return () => {
@@ -118,9 +118,13 @@ export default function QRResult({
   }, [playUrl]);
 
   const copyUrl = useCallback(async () => {
-    await navigator.clipboard.writeText(playUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await navigator.clipboard.writeText(playUrl);
+      setUrlCopyState("copied");
+    } catch {
+      setUrlCopyState("error");
+    }
+    setTimeout(() => setUrlCopyState("idle"), 1500);
   }, [playUrl]);
 
   const copyHex = useCallback(async () => {
@@ -317,7 +321,11 @@ export default function QRResult({
 
         <Button variant="outline" size="sm" onClick={copyUrl}>
           <CopyIcon size={12} />
-          {copied ? "Copied!" : "Copy URL"}
+          {urlCopyState === "copied"
+            ? "Copied!"
+            : urlCopyState === "error"
+              ? "Copy failed"
+              : "Copy URL"}
         </Button>
 
         <Button variant="outline" size="sm" onClick={copyHex}>

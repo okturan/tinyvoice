@@ -184,11 +184,6 @@ test.describe("default tab", () => {
     });
 
     test(`?v= with ${name} tells the user the link was unreadable`, async ({ app }) => {
-      // BUG: QRPage.initialData is null for an unreadable ?v= and DecodePanel
-      // starts with error "" — the user who followed a bad link sees the
-      // empty Decode tab and no explanation at all (src/pages/QRPage.tsx
-      // initialData useMemo; src/components/qr/DecodePanel.tsx error state).
-      test.fail();
       await app.goto({ v });
       await expect(app.tab("decode")).toHaveAttribute("aria-selected", "true");
       await expect(panelError(app)).toHaveText(/voice data|packet|link/i);
@@ -214,10 +209,6 @@ test.describe("default tab", () => {
   });
 
   test("a payload over the 64 KiB cap tells the user", async ({ app, page }) => {
-    // BUG: same silent path as above — decodeQRString returns null for
-    // > MAX_PACKET_BYTES (src/lib/qrParsing.ts decodePacketBase64) and
-    // nothing surfaces it.
-    test.fail();
     await allowLongVoiceUrls(page);
     await app.goto({ v: toBase64(packet("12_5hz", tokensFor(32768))) });
     await expect(app.tab("decode")).toHaveAttribute("aria-selected", "true");
@@ -321,13 +312,7 @@ test.describe("hex source", () => {
     await expect(app.hexTextarea).toHaveAttribute("aria-invalid", "true");
   });
 
-  test("bytes that are not a packet are rejected inline and unload the player (current behaviour)", async ({ app }) => {
-    // NOTE: the sources disagree on what a failed submission does to a packet
-    // that is already loaded. Bad hex (handleHexData) and a bad .bin
-    // (handleTokenData) null the packet and unmount the player, whereas a QR
-    // image without voice data (handleQRData) only sets the error and keeps
-    // it — see "a failed QR upload keeps the packet…". Which policy is right
-    // is an open product question; this pins the hex side of today's behaviour.
+  test("bytes that are not a packet are rejected inline and leave the player loaded", async ({ app }) => {
     const bytes = packetSeconds("25hz", 1, 5);
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -339,8 +324,9 @@ test.describe("hex source", () => {
     await expect(inlineError(app)).toHaveText(
       "These bytes are hexadecimal, but they are not a valid TinyVoice packet.",
     );
-    await expect(app.playerPlaceholder).toBeVisible();
-    await expect(app.playButton).toBeHidden();
+    await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
+    await expect(app.playButton).toBeVisible();
+    await expect(app.playerPlaceholder).toBeHidden();
     await expect(panelError(app)).toBeHidden();
     await expect(app.hexTextarea).toHaveValue("aa bb cc");
 
@@ -351,6 +337,7 @@ test.describe("hex source", () => {
     await expect(inlineError(app)).toHaveText(
       "These bytes are hexadecimal, but they are not a valid TinyVoice packet.",
     );
+    await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
   });
 
   test("typing again clears the inline error", async ({ app }) => {
@@ -458,11 +445,7 @@ test.describe("upload source", () => {
     await expect(panelError(app)).toHaveText("No QR found in image");
   });
 
-  test("a raw .bin loads; an odd-length .bin is refused and unloads the player (current behaviour)", async ({ app }) => {
-    // NOTE: handleTokenData nulls the packet on failure, so a bad .bin throws
-    // away whatever was loaded — unlike a bad QR image, which keeps it (see
-    // "a failed QR upload keeps the packet…"). One failure policy across the
-    // sources is an open product question; this pins the .bin side of today's.
+  test("a raw .bin loads; an odd-length .bin is refused and leaves the player loaded", async ({ app }) => {
     const bytes = packetSeconds("50hz", 0.5, 8);
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -473,8 +456,9 @@ test.describe("upload source", () => {
 
     await app.uploadFile("odd.bin", new Uint8Array([0x10, 0x20, 0x30]), "application/octet-stream");
     await expect(panelError(app)).toHaveText("Invalid voice data");
-    await expect(app.playButton).toBeHidden();
-    await expect(app.playerPlaceholder).toBeVisible();
+    await expect(app.playerStatus).toHaveText(initialStatus(bytes, "50hz"));
+    await expect(app.playButton).toBeVisible();
+    await expect(app.playerPlaceholder).toBeHidden();
   });
 
   test("a two-byte .bin is the smallest legacy packet", async ({ app }) => {
@@ -507,10 +491,6 @@ test.describe("upload source", () => {
   });
 
   test("an image file that cannot be decoded reports an error", async ({ app }) => {
-    // BUG: Dropzone.handleFile only wires img.onload; a corrupt or
-    // unsupported image (HEIC, truncated PNG) fires onerror and nothing
-    // happens — no error line, no state change (src/components/qr/Dropzone.tsx handleFile).
-    test.fail();
     await app.goto({ tab: "decode" });
     await app.uploadFile("broken.png", Buffer.from("definitely not a png"), "image/png");
     await expect(panelError(app)).toBeVisible();
@@ -536,8 +516,6 @@ test.describe("camera source", () => {
     await expect(app.page.getByText("Point at QR code")).toBeVisible({ timeout: 5_000 });
     await expect(app.stopCameraButton).toBeVisible();
     await expect(app.startCameraButton).toBeHidden();
-    // Visible proves the element mounted, not that the feed reached it — the
-    // scan test below is where the live stream is checked.
     await expect(video(app)).toBeVisible();
 
     await app.stopCameraButton.click();
@@ -564,13 +542,6 @@ test.describe("camera source", () => {
   });
 
   test("scanning the fake camera feed loads the packet and stops the camera", async ({ app }) => {
-    // BUG: useCamera.start() assigns video.srcObject before setIsActive(true),
-    // but CameraScanner only mounts the <video> once isActive is true, so
-    // videoRef.current is still null at assignment time, the stream never
-    // reaches the element, useQRScanner never sees HAVE_ENOUGH_DATA and no
-    // frame is ever scanned (src/hooks/useCamera.ts start();
-    // src/components/qr/CameraScanner.tsx; src/hooks/useQRScanner.ts).
-    test.fail();
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
     await app.openSource("camera");

@@ -15,26 +15,30 @@ export function TopBar() {
 
         {/* Center: Nav pills */}
         <nav className="flex gap-0.5 ml-2">
-          <Link
-            to="/"
-            className={`px-2.5 py-0.5 rounded text-[0.65rem] font-semibold no-underline transition-colors ${
-              location.pathname === "/"
-                ? "bg-[var(--surface0)] text-[var(--text)]"
-                : "text-[var(--overlay)] hover:text-[var(--subtext)] hover:bg-[var(--surface0)]/50"
-            }`}
-          >
-            PTT
-          </Link>
-          <Link
-            to="/qr"
-            className={`px-2.5 py-0.5 rounded text-[0.65rem] font-semibold no-underline transition-colors ${
-              location.pathname === "/qr"
-                ? "bg-[var(--surface0)] text-[var(--text)]"
-                : "text-[var(--overlay)] hover:text-[var(--subtext)] hover:bg-[var(--surface0)]/50"
-            }`}
-          >
-            QR
-          </Link>
+          {location.pathname === "/" ? (
+            <span className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold bg-[var(--surface0)] text-[var(--text)]">
+              PTT
+            </span>
+          ) : (
+            <Link
+              to="/"
+              className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold no-underline transition-colors text-[var(--overlay)] hover:text-[var(--subtext)] hover:bg-[var(--surface0)]/50"
+            >
+              PTT
+            </Link>
+          )}
+          {location.pathname === "/qr" ? (
+            <span className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold bg-[var(--surface0)] text-[var(--text)]">
+              QR
+            </span>
+          ) : (
+            <Link
+              to="/qr"
+              className="px-2.5 py-0.5 rounded text-[0.65rem] font-semibold no-underline transition-colors text-[var(--overlay)] hover:text-[var(--subtext)] hover:bg-[var(--surface0)]/50"
+            >
+              QR
+            </Link>
+          )}
         </nav>
 
         <span className="flex-1" />
@@ -42,6 +46,7 @@ export function TopBar() {
         {/* Right: Settings gear */}
         <button
           className="p-2 flex items-center justify-center text-[var(--overlay)] hover:text-[var(--text)] transition-colors cursor-pointer"
+          aria-label="Settings"
           onClick={() => setSettingsOpen(true)}
         >
           <GearIcon size={16} />

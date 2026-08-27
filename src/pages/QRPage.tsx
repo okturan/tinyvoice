@@ -17,6 +17,9 @@ export default function QRPage() {
     return decodeQRString(voiceB64);
   }, [voiceB64]);
 
+  const initialError =
+    voiceB64 && !initialData ? "This link does not contain voice data" : undefined;
+
   const defaultTab = voiceB64 ? "decode" : "record";
 
   return (
@@ -39,6 +42,7 @@ export default function QRPage() {
               <DecodePanel
                 key={voiceB64 ?? "manual"}
                 initialData={initialData}
+                initialError={initialError}
               />
             </TabsContent>
           </Tabs>

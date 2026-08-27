@@ -1,6 +1,17 @@
 import { unpackTokens } from "@/lib/wire-format";
 
-const MAX_PACKET_BYTES = 64 * 1024;
+export const MAX_PACKET_BYTES = 64 * 1024;
+
+/** Error when `bytes` is over the size bound or is not a voice packet. */
+export function validateVoicePacket(bytes: Uint8Array): string | null {
+  if (bytes.byteLength > MAX_PACKET_BYTES) {
+    return "This packet is too large.";
+  }
+  if (unpackTokens(bytes) === null) {
+    return "Invalid voice data";
+  }
+  return null;
+}
 
 /**
  * Decode a QR string (URL with ?v= param, or raw base64) into voice token bytes.
@@ -49,7 +60,7 @@ function base64ToBytes(b64: string): Uint8Array {
 function decodePacketBase64(value: string): Uint8Array | null {
   try {
     const bytes = base64ToBytes(value);
-    if (bytes.byteLength > MAX_PACKET_BYTES || unpackTokens(bytes) === null) {
+    if (validateVoicePacket(bytes)) {
       return null;
     }
     return bytes;

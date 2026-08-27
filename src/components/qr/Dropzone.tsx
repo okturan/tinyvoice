@@ -2,6 +2,13 @@ import { useState, useCallback, useRef } from "react";
 import { FolderOpen } from "lucide-react";
 import jsQR from "jsqr";
 import { decodeQRString } from "@/lib/qrParsing";
+import { parseHex } from "@/lib/hex";
+
+function isHexTextFile(file: File): boolean {
+  if (file.type.startsWith("text/")) return true;
+  const name = file.name.toLowerCase();
+  return name.endsWith(".txt") || name.endsWith(".hex");
+}
 
 interface DropzoneProps {
   onTokenData: (data: Uint8Array) => void;
@@ -15,8 +22,10 @@ export default function Dropzone({ onTokenData, onError }: DropzoneProps) {
   const handleFile = useCallback(
     (file: File) => {
       if (file.type.startsWith("image/")) {
+        const objectUrl = URL.createObjectURL(file);
         const img = new Image();
         img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
           const cv = document.createElement("canvas");
           cv.width = img.width;
           cv.height = img.height;
@@ -35,10 +44,25 @@ export default function Dropzone({ onTokenData, onError }: DropzoneProps) {
             onError("No QR found in image");
           }
         };
-        img.src = URL.createObjectURL(file);
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          onError("Could not read the image");
+        };
+        img.src = objectUrl;
         return;
       }
-      // Binary file
+      if (isHexTextFile(file)) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            onTokenData(parseHex(String(reader.result)));
+          } catch {
+            onError("Invalid voice data");
+          }
+        };
+        reader.readAsText(file);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         onTokenData(new Uint8Array(reader.result as ArrayBuffer));

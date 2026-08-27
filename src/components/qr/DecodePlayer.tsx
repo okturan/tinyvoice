@@ -72,6 +72,7 @@ export default function DecodePlayer({
     setProgress(0);
     setStatus("");
     setStatusType("");
+    setQualityOverride(null);
 
     return () => {
       playbackGenerationRef.current += 1;
@@ -90,6 +91,7 @@ export default function DecodePlayer({
   const handleQualityChange = useCallback(
     (q: string) => {
       const newQ = q === "auto" ? null : (q as Quality);
+      if (newQ === qualityOverride) return;
       playbackGenerationRef.current += 1;
       stopPlayback();
       setQualityOverride(newQ);
@@ -102,7 +104,7 @@ export default function DecodePlayer({
       );
       setStatusType("");
     },
-    [autoLabel, stopPlayback],
+    [autoLabel, qualityOverride, stopPlayback],
   );
 
   const handlePlay = useCallback(async () => {
@@ -186,6 +188,7 @@ export default function DecodePlayer({
       sourceRef.current = src;
       setIsPlaying(true);
       setIsLoading(false);
+      setProgress(0);
       setStatusType("ok");
       setStatus(
         `${(audio.length / SR).toFixed(1)}s decoded from ${packetBytes.length} bytes`,
@@ -204,6 +207,7 @@ export default function DecodePlayer({
       setStatus((e as Error).message);
       setIsPlaying(false);
       setIsLoading(false);
+      setProgress(0);
     }
   }, [
     isPlaying,
@@ -220,7 +224,11 @@ export default function DecodePlayer({
     setStatusType("");
     setStatus(`Downloading ${effectiveQualityLabel} models...`);
     const ok = await codecContext.loadModels(effectiveQuality);
-    if (!ok) setStatus("Download cancelled");
+    if (!ok) {
+      setStatus("Download cancelled");
+      return;
+    }
+    setStatus("");
   }, [codecContext, effectiveQuality, effectiveQualityLabel]);
 
   return (

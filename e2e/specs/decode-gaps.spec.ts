@@ -131,7 +131,7 @@ function solidPng(width: number, height: number, rgb: [number, number, number] =
 // ── Save hex → Upload ────────────────────────────────────────────
 
 test.describe("the app's own Save hex file through Upload", () => {
-  test("Save hex writes ASCII hex text, and Upload refuses that very file (current behaviour)", async ({ app }) => {
+  test("Save hex writes ASCII hex text, and Upload loads that very file", async ({ app }) => {
     await readyToRecord(app);
     await app.record(700);
     await app.copyHexButton.click();
@@ -151,20 +151,11 @@ test.describe("the app's own Save hex file through Upload", () => {
 
     await app.openTab("decode");
     await app.uploadFile(name, buffer, "text/plain");
-    // Dropzone treats every non-image file as raw packet bytes, so the hex
-    // text (odd length, first byte "0") is not a packet.
-    await expect(app.sourceError).toHaveText("Invalid voice data");
-    await expect(app.playButton).toBeHidden();
-    await expect(app.sourceTab("upload")).toHaveAttribute("data-state", "active");
+    await expect(app.playerStatus).toHaveText(initialStatus(packed, "12_5hz"));
+    await expect(app.sourceError).toBeHidden();
   });
 
   test("the file Save hex wrote loads the same packet through Upload", async ({ app }) => {
-    // BUG: QRResult.saveHex writes formatHexBytes(packed) as text/plain, but
-    // Dropzone.handleFile only special-cases image/* and hands every other
-    // file's raw bytes to onTokenData — so the app's own export comes back
-    // as "Invalid voice data". Hex text has to be pasted into the Hex tab by
-    // hand (src/components/qr/Dropzone.tsx handleFile; QRResult.tsx saveHex).
-    test.fail();
     await readyToRecord(app);
     await app.record(700);
     const { name, buffer } = await saveHexFile(app);
@@ -181,12 +172,6 @@ test.describe("the app's own Save hex file through Upload", () => {
 
 test.describe("size cap on the hex and upload paths", () => {
   test("a .bin just over the 64 KiB URL cap is refused", async ({ app }) => {
-    // BUG: MAX_PACKET_BYTES (64 KiB) is enforced only in decodePacketBase64
-    // (src/lib/qrParsing.ts). DecodePanel.handleTokenData goes straight to
-    // codec.parsePacket → unpackTokens, whose legacy branch accepts any even
-    // length, so an upload of any size loads as "50hz (legacy fallback)" and
-    // HexStream renders one span per byte.
-    test.fail();
     const bytes = legacyPacket(tokensFor(32769)); // 65 538 B, no magic byte
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -200,11 +185,6 @@ test.describe("size cap on the hex and upload paths", () => {
   });
 
   test("hex text just over the 64 KiB URL cap is refused", async ({ app }) => {
-    // BUG: same gap on the hex path — DecodePanel.handleHexData calls
-    // codec.parsePacket with no size check, so the very payload the URL path
-    // refuses (65 537 B, see decode-sources "the 64 KiB URL cap") loads when
-    // pasted as hex.
-    test.fail();
     const bytes = packet("12_5hz", tokensFor(32768)); // 65 537 B
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -220,37 +200,29 @@ test.describe("size cap on the hex and upload paths", () => {
 // ── TopBar on /qr?v= ────────────────────────────────────────────
 
 test.describe("TopBar QR pill on /qr?v=", () => {
-  test("clicking the already-active QR pill drops the packet and shows the sources (current behaviour)", async ({ app, page }) => {
+  test("the already-active QR pill is not a link and keeps the loaded packet", async ({ app, page }) => {
     const bytes = packetSeconds("25hz", 1, 31);
     await app.goto({ v: toBase64(bytes) });
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
-    const qrPill = page.getByRole("link", { name: "QR", exact: true });
-    await expect(qrPill).toHaveAttribute("href", "/qr");
+    const qrPill = page.getByRole("navigation").getByText("QR", { exact: true });
+    await expect(page.getByRole("link", { name: "QR", exact: true })).toHaveCount(0);
 
     await qrPill.click();
-    // The Link navigates to a bare /qr; QRPage keys DecodePanel on ?v=, so
-    // it remounts as "manual" with nothing in it.
-    await expect(page).toHaveURL("/qr");
+    await settle(page);
+    await expect(page).toHaveURL((url) => url.searchParams.get("v") === toBase64(bytes));
     await expect(app.tab("decode")).toHaveAttribute("data-state", "active");
-    await expect(app.playerCard).toBeHidden();
-    await expect(app.newSourceButton).toBeHidden();
-    await expect(app.sourceTab("hex")).toBeVisible();
-    await expect(app.hexTextarea).toHaveValue("");
+    await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
+    await expect(app.playButton).toBeVisible();
+    await expect(app.newSourceButton).toBeVisible();
     await expect(app.sourceError).toBeHidden();
   });
 
   test("clicking the already-active QR pill keeps the loaded packet", async ({ app, page }) => {
-    // BUG: TopBar renders the QR pill as <Link to="/qr"> even when the page
-    // is already /qr — a click on the highlighted pill strips ?v= and QRPage
-    // (key={voiceB64 ?? "manual"}) remounts an empty DecodePanel. The PTT
-    // page renders its own active pill as inert text (src/components/layout/
-    // TopBar.tsx; src/pages/QRPage.tsx DecodePanel key).
-    test.fail();
     const bytes = packetSeconds("25hz", 1, 32);
     await app.goto({ v: toBase64(bytes) });
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
 
-    await page.getByRole("link", { name: "QR", exact: true }).click();
+    await page.getByRole("navigation").getByText("QR", { exact: true }).click();
     await settle(page);
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
     await expect(app.playButton).toBeVisible();
@@ -262,12 +234,6 @@ test.describe("TopBar QR pill on /qr?v=", () => {
 
 test.describe("re-selecting the highlighted decoder", () => {
   test("clicking the decoder that is already selected while playing is a no-op", async ({ app, models }) => {
-    // BUG: DecodePlayer.handleQualityChange has no same-value guard — it
-    // bumps the playback generation, stops the source, nulls the decoded
-    // buffer and rewrites the status even when the chosen decoder is the one
-    // already in effect, so the next Play runs inference again
-    // (src/components/qr/DecodePlayer.tsx handleQualityChange).
-    test.fail();
     const bytes = packetSeconds("12_5hz", 4); // 50 tokens → 4.0 s
     await app.goto({ v: toBase64(bytes) });
     await app.downloadModelsButton.click();
@@ -299,18 +265,14 @@ test.describe("re-selecting the highlighted decoder", () => {
 // ── Settings gear ───────────────────────────────────────────────
 
 test.describe("settings gear in the TopBar", () => {
-  test("the gear button has no accessible name (current behaviour)", async ({ app }) => {
+  test("the gear button is named Settings", async ({ app }) => {
     await app.goto();
     await expect(app.settingsButton).toBeVisible();
-    await expect(app.settingsButton).toHaveAccessibleName("");
-    await expect(app.page.getByRole("button", { name: /settings/i })).toHaveCount(0);
+    await expect(app.settingsButton).toHaveAccessibleName("Settings");
+    await expect(app.page.getByRole("button", { name: /settings/i })).toHaveCount(1);
   });
 
   test("the gear button can be found as the Settings button", async ({ app, page }) => {
-    // BUG: TopBar's gear <button> wraps an SVG only — no aria-label, title
-    // or sr-only text (src/components/layout/TopBar.tsx). The PTT page's own
-    // gear is labelled "Settings"; the QR page's is announced as "button".
-    test.fail();
     await app.goto();
     const gear = page.getByRole("button", { name: /settings/i });
     await expect(gear).toBeVisible();
@@ -324,7 +286,7 @@ test.describe("settings gear in the TopBar", () => {
 test.describe("clipboard failures on the record result", () => {
   test.use({ strictPageErrors: false });
 
-  test("Copy hex says 'Copy failed'; Copy URL stays silent and leaks an unhandled rejection (current behaviour)", async ({ app, page, pageErrors }) => {
+  test("Copy hex and Copy URL both report a clipboard failure without an unhandled rejection", async ({ app, page, pageErrors }) => {
     await readyToRecord(app);
     await app.record(700);
     await breakClipboard(page);
@@ -337,18 +299,13 @@ test.describe("clipboard failures on the record result", () => {
     const copyUrl = actionButton(app, COPY_URL_SLOT);
     await expect(copyUrl).toHaveText("Copy URL");
     await copyUrl.click();
-    await expect.poll(() => pageErrors.length).toBeGreaterThan(0);
-    expect(pageErrors.join("\n")).toMatch(/Write permission denied/);
-    await expect(copyUrl).toHaveText("Copy URL");
+    await expect(copyUrl).toHaveText(/fail/i);
+    await expect(copyUrl).toHaveText("Copy URL", { timeout: 3_000 });
+    expect(pageErrors).toEqual([]);
     await expect(app.copyUrlButton).not.toHaveText("Copied!");
   });
 
   test("Copy URL reports a clipboard failure without an unhandled rejection", async ({ app, page, pageErrors }) => {
-    // BUG: QRResult.copyUrl awaits navigator.clipboard.writeText with no
-    // try/catch (unlike copyHex, which flips to "Copy failed"), so a refused
-    // clipboard leaves the label on "Copy URL" and surfaces only as an
-    // unhandled rejection in the console (src/components/qr/QRResult.tsx copyUrl).
-    test.fail();
     await readyToRecord(app);
     await app.record(700);
     await breakClipboard(page);
@@ -365,12 +322,11 @@ test.describe("clipboard failures on the record result", () => {
 // ── Failed second-source loads ──────────────────────────────────
 
 test.describe("a failed second source with a packet already loaded", () => {
-  test("side by side: .bin and hex failures clear the player, QR-image failures keep it", async ({ app }) => {
+  test("side by side: .bin, hex, and QR-image failures keep the player", async ({ app }) => {
     // Individually, three of these four are already pinned in
     // decode-sources.spec.ts; this puts the whole matrix in one place and
-    // adds the missing "image without a QR" case. handleTokenData /
-    // handleHexData null out the packet on failure; handleQRData and
-    // Dropzone's image errors only set the error line (DecodePanel.tsx).
+    // adds the missing "image without a QR" case. Every failed input reports
+    // the error and leaves the loaded packet in place.
     const bytes = packetSeconds("12_5hz", 1, 21);
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -381,21 +337,23 @@ test.describe("a failed second source with a packet already loaded", () => {
       await expect(app.sourceError).toBeHidden();
     };
 
-    // Clears: an odd-length .bin.
+    // Keeps: an odd-length .bin.
     await reload();
     await app.uploadFile("odd.bin", new Uint8Array([0x10, 0x20, 0x30]), "application/octet-stream");
     await expect(app.sourceError).toHaveText("Invalid voice data");
-    await expect(app.playerPlaceholder).toBeVisible();
-    await expect(app.playButton).toBeHidden();
+    await expect(app.playerStatus).toHaveText(loaded);
+    await expect(app.playButton).toBeVisible();
+    await expect(app.playerPlaceholder).toBeHidden();
 
-    // Clears: hex that is not a packet.
+    // Keeps: hex that is not a packet.
     await reload();
     await app.submitHex("aa bb cc");
     await expect(app.hexInlineError).toHaveText(
       "These bytes are hexadecimal, but they are not a valid TinyVoice packet.",
     );
-    await expect(app.playerPlaceholder).toBeVisible();
-    await expect(app.playButton).toBeHidden();
+    await expect(app.playerStatus).toHaveText(loaded);
+    await expect(app.playButton).toBeVisible();
+    await expect(app.playerPlaceholder).toBeHidden();
 
     // Keeps: a QR image whose payload is not voice data.
     await reload();

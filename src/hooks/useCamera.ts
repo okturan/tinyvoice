@@ -3,23 +3,41 @@ import { useState, useRef, useCallback, useEffect } from "react";
 export function useCamera() {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState("");
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const startingRef = useRef(false);
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !stream) return;
+    el.srcObject = stream;
+    return () => {
+      el.srcObject = null;
+    };
+  }, [stream, isActive]);
 
   const start = useCallback(async () => {
+    if (startingRef.current || streamRef.current) return;
+    startingRef.current = true;
     try {
       setStatus("Requesting camera...");
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const next = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
       });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      if (!aliveRef.current) {
+        next.getTracks().forEach((t) => t.stop());
+        return;
       }
+      streamRef.current = next;
+      setStream(next);
       setIsActive(true);
       setStatus("Point at QR code");
     } catch (e) {
       setStatus(`Camera: ${(e as Error).message}`);
+    } finally {
+      startingRef.current = false;
     }
   }, []);
 
@@ -28,9 +46,7 @@ export function useCamera() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    setStream(null);
     setIsActive(false);
     setStatus("");
   }, []);
@@ -45,6 +61,7 @@ export function useCamera() {
 
   useEffect(() => {
     return () => {
+      aliveRef.current = false;
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }

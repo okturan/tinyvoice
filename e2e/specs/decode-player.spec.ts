@@ -94,14 +94,7 @@ test.describe("play, decode, stop", () => {
     // the state that holds while the stubbed run() sleeps.
     await expect(app.playerStatus).toHaveText("Decoding...");
     await expect(app.playerStatus).toHaveClass(/--overlay/);
-    // 80 % pulls the indicator back by 20 % (0.8 × 100 is 80.00000000000001,
-    // hence the tolerant match). The bar exposes no accessible value yet
-    // (see the test.fail() below), so the transform is the only readable
-    // signal of the 80 % state; swap this for aria-valuenow once it does.
-    await expect(progressBar(app).locator('[data-slot="progress-indicator"]')).toHaveAttribute(
-      "style",
-      /translateX\(-(19\.9\d*|20)%\)/,
-    );
+    await expect(progressBar(app)).toHaveAttribute("aria-valuenow", /^80/);
 
     await expectPlaying(app);
     await expect(app.playButton).toBeEnabled();
@@ -161,12 +154,6 @@ test.describe("play, decode, stop", () => {
   });
 
   test("the decode progress bar exposes its value to assistive technology", async ({ app }) => {
-    // BUG: the shadcn wrapper in src/components/ui/progress.tsx destructures
-    // `value` out of its props and only uses it for the indicator's
-    // transform — the Radix root never receives it, so every progress bar in
-    // the app is announced as indeterminate (no aria-valuenow, data-state
-    // "indeterminate") no matter what it shows.
-    test.fail();
     const bytes = packetSeconds("12_5hz", 4);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
@@ -177,13 +164,6 @@ test.describe("play, decode, stop", () => {
   });
 
   test("the progress line goes away once the packet has been decoded", async ({ app }) => {
-    // BUG: DecodePlayer keeps <Progress> mounted while `progress > 0`, and
-    // handlePlay's onProgress callback leaves `progress` at 100 after a
-    // successful decode (nothing resets it on success), so a full bar sits
-    // under the decoder row for as long as the packet is loaded — it only
-    // clears on a packet change or a decoder override. (DecodePlayer.tsx:
-    // the `(loadingModels || isLoading || progress > 0)` guard.)
-    test.fail();
     const bytes = packetSeconds("12_5hz", 4);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
@@ -193,13 +173,6 @@ test.describe("play, decode, stop", () => {
   });
 
   test("after the player's own Download finishes, the status line stops claiming to download", async ({ app }) => {
-    // BUG: DecodePlayer.handleDownloadModels writes "Downloading 12.5hz
-    // models..." into `status` and never clears it on success. While the
-    // load runs the <p> shows the codec context's own text, so the stale
-    // line only becomes visible once the download is over — and stays
-    // until the next Play or override. (DecodePlayer.tsx handleDownloadModels
-    // + the `status || initialStatus` fallback.)
-    test.fail();
     const bytes = packetSeconds("12_5hz", 2);
     await app.goto({ v: toBase64(bytes) });
     await app.downloadModelsButton.click();
@@ -284,13 +257,7 @@ test.describe("decoder override while playing", () => {
     ]);
   });
 
-  test("(current behaviour) re-selecting the active decoder stops playback and discards the buffer", async ({ app }) => {
-    // NOTE: handleQualityChange has no early return when the choice equals
-    // the current override, so a tap on the already-highlighted button
-    // mid-playback stops it, prints a redundant "Decoder set to …" and
-    // forces a full re-decode on the next Play. A toggle group would
-    // normally ignore re-selection; this pins what happens today, not what
-    // should.
+  test("re-selecting the active decoder is a no-op", async ({ app }) => {
     const bytes = packetSeconds("12_5hz", LONG_SECONDS);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
@@ -299,14 +266,15 @@ test.describe("decoder override while playing", () => {
     expect(await app.selectedDecoderLabels()).toEqual(["Auto (12.5hz)"]);
 
     await app.decoderButton("Auto (12.5hz)").click();
-    await expectIdle(app);
-    await expect(app.playerStatus).toHaveText("Decoder set to Auto (12.5hz)");
+    await expectPlaying(app);
+    await expect(app.playerStatus).toHaveText(`30.0s decoded from ${bytes.length} bytes`);
     expect(await app.selectedDecoderLabels()).toEqual(["Auto (12.5hz)"]);
 
     await app.playButton.click();
+    await expectIdle(app);
+    await app.playButton.click();
     await expectPlaying(app);
     expect((await app.ortState()).runs.map((r) => r.model)).toEqual([
-      "decoder_12_5hz.onnx",
       "decoder_12_5hz.onnx",
     ]);
   });
@@ -335,11 +303,6 @@ test.describe("failures", () => {
   });
 
   test("the progress line is cleared after a decode failure", async ({ app }) => {
-    // BUG: same guard as the success case — the run rejects after the
-    // "Decoding..." (80 %) callback and handlePlay's catch resets isPlaying /
-    // isLoading but not `progress`, so a bar stuck at 80 % stays under the
-    // red error line. (DecodePlayer.tsx handlePlay catch block.)
-    test.fail();
     const bytes = packetSeconds("12_5hz", 4);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);

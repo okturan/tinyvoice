@@ -6,63 +6,75 @@ import CameraScanner from "./CameraScanner";
 import DecodePlayer from "./DecodePlayer";
 import HexInput from "./HexInput";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
-import { decodeQRString } from "@/lib/qrParsing";
+import { decodeQRString, validateVoicePacket } from "@/lib/qrParsing";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLayoutEthos } from "@/contexts/LayoutContext";
 import { qualityLabel } from "@/lib/format";
 
+type PacketSource = "hex" | "upload" | "camera" | "url";
+
 interface DecodePanelProps {
   initialData?: Uint8Array | null;
+  initialError?: string;
 }
 
-export default function DecodePanel({ initialData }: DecodePanelProps) {
+export default function DecodePanel({ initialData, initialError }: DecodePanelProps) {
   const [parsed, setParsed] = useState<ParsedPacket | null>(() => {
-    if (initialData) {
-      return codec.parsePacket(initialData);
-    }
-    return null;
+    if (!initialData || validateVoicePacket(initialData)) return null;
+    return codec.parsePacket(initialData);
   });
-  const [packetBytes, setPacketBytes] = useState<Uint8Array | null>(() =>
-    initialData ? new Uint8Array(initialData) : null,
-  );
-  const [error, setError] = useState("");
+  const [packetBytes, setPacketBytes] = useState<Uint8Array | null>(() => {
+    if (!initialData || validateVoicePacket(initialData)) return null;
+    return new Uint8Array(initialData);
+  });
+  const [error, setError] = useState(initialError ?? "");
 
-  const handleTokenData = useCallback((data: Uint8Array) => {
-    const result = codec.parsePacket(data);
+  const acceptPacket = useCallback((bytes: Uint8Array, source: PacketSource): string | void => {
+    const failure = validateVoicePacket(bytes);
+    if (failure) {
+      if (source === "hex") {
+        return failure === "Invalid voice data"
+          ? "These bytes are hexadecimal, but they are not a valid TinyVoice packet."
+          : failure;
+      }
+      setError(failure);
+      return;
+    }
+    const result = codec.parsePacket(bytes);
     if (!result) {
+      if (source === "hex") {
+        return "These bytes are hexadecimal, but they are not a valid TinyVoice packet.";
+      }
       setError("Invalid voice data");
-      setParsed(null);
-      setPacketBytes(null);
       return;
     }
     setError("");
     setParsed(result);
-    setPacketBytes(new Uint8Array(data));
+    setPacketBytes(new Uint8Array(bytes));
   }, []);
 
-  const handleHexData = useCallback((data: Uint8Array) => {
-    const result = codec.parsePacket(data);
-    if (!result) {
-      setError("");
-      setParsed(null);
-      setPacketBytes(null);
-      return "These bytes are hexadecimal, but they are not a valid TinyVoice packet.";
-    }
-    setError("");
-    setParsed(result);
-    setPacketBytes(new Uint8Array(data));
-  }, []);
+  const handleTokenData = useCallback(
+    (data: Uint8Array) => {
+      acceptPacket(data, "upload");
+    },
+    [acceptPacket],
+  );
+
+  const handleHexData = useCallback(
+    (data: Uint8Array) => acceptPacket(data, "hex"),
+    [acceptPacket],
+  );
 
   const handleQRData = useCallback(
     (str: string) => {
       const bytes = decodeQRString(str);
       if (bytes) {
-        handleTokenData(bytes);
+        acceptPacket(bytes, "camera");
       } else {
         setError("QR does not contain voice data");
       }
     },
-    [handleTokenData],
+    [acceptPacket],
   );
 
   const handleError = useCallback((msg: string) => {

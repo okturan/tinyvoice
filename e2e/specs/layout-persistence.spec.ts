@@ -516,19 +516,16 @@ test.describe("reload", () => {
 test.describe("navigation", () => {
   test("the top bar links swap between /qr and /, and the current page is highlighted", async ({ app, page }) => {
     await app.goto();
-    const qrLink = page.getByRole("link", { name: "QR", exact: true });
+    const nav = page.getByRole("navigation");
     const pttLink = page.getByRole("link", { name: "PTT", exact: true });
-    await expect(qrLink).toHaveAttribute("href", "/qr");
-    // The nav has no aria-current; the text colour class is the only highlight cue.
-    await expect(qrLink).toHaveClass(/text-\[var\(--text\)\]/);
+    // The active route is inert text, matching PTT's own header.
+    await expect(page.getByRole("link", { name: "QR", exact: true })).toHaveCount(0);
+    await expect(nav.getByText("QR", { exact: true })).toHaveClass(/text-\[var\(--text\)\]/);
     await expect(pttLink).toHaveAttribute("href", "/");
     await expect(pttLink).not.toHaveClass(/text-\[var\(--text\)\]/);
 
     await pttLink.click();
     await expect(page).toHaveURL("/");
-    // NOTE: current behaviour, not a requirement — PTT's own header
-    // (src/pages/PTTPage.tsx) renders the active page as a plain pill rather
-    // than a link, while TopBar on /qr keeps both pages as links.
     await expect(page.getByRole("link", { name: "PTT", exact: true })).toHaveCount(0);
     await expect(page.getByText("PTT", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Choose models" })).toBeVisible();

@@ -261,13 +261,6 @@ test.describe("while models are downloading", () => {
 
 test.describe("decoder override across packets", () => {
   test("a new packet resets the decoder to Auto", async ({ app }) => {
-    // BUG: DecodePlayer keeps `qualityOverride` in component state and is not
-    // remounted when DecodePanel swaps packets, so an override chosen for one
-    // packet silently applies to the next one (QRResult on the Record tab
-    // does reset its override on a new packet). See DecodePlayer.tsx
-    // qualityOverride state + the packetBytes effect that resets everything
-    // except it.
-    test.fail();
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
     const first = packetSeconds("12_5hz", 1, 1);
@@ -285,11 +278,6 @@ test.describe("decoder override across packets", () => {
   });
 
   test("a new packet whose quality equals the stale override still highlights a decoder", async ({ app }) => {
-    // BUG: same root cause as above. With override=25hz and a 25hz packet
-    // arriving, the 25hz button is filtered out (it equals parsed.quality)
-    // and Auto is not highlighted because qualityOverride is set — so no
-    // decoder button is selected at all.
-    test.fail();
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
     const first = packetSeconds("12_5hz", 1, 1);
