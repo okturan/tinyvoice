@@ -69,6 +69,7 @@ Packets (`e2e/support/packets.ts`, an independent oracle — do not import the a
 * Assert on what a user sees (roles, labels, status text). No test ids in app code.
 * A confirmed app bug gets a test that asserts the **correct** behaviour and is marked `test.fail()` with a `// BUG:` comment (what happens, where in the code). It flips to "unexpected pass" once fixed.
 * Decode inputs share one size bound and one failure policy: a failed load reports an error and leaves any already-loaded packet in place. The camera viewfinder receives the live stream, so a voice QR in the fake camera feed loads the packet and stops the camera.
+* Inactive Record / Decode tabs still unmount their views. Session state lives above the tabs, so a recording, a loaded packet, and the armed microphone survive a tab or ethos switch. Capture devices are released when the user leaves `/qr`.
 
 ## Gotchas the first authors hit
 

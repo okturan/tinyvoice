@@ -186,9 +186,8 @@ test.describe("Decode tab per ethos", () => {
     await expect(app.sourceTab("hex")).toBeVisible();
     await expect(app.playerCard).toBeHidden();
     await expect(stageHeader(page, `${bytes.length} B · 12.5hz`)).toBeHidden();
-    // NOTE: current behaviour, not a requirement — stage-swap unmounts the
-    // sources while the player is on stage (DecodePanel), so the hex that was
-    // just decoded is gone, whereas split-deck keeps it behind "Edit hex".
+    // New source clears the session packet. Stage-swap then remounts the
+    // hex form empty. Split-deck keeps the submitted hex behind "Edit hex".
     await expect(app.hexTextarea).toHaveValue("");
   });
 
@@ -278,12 +277,6 @@ test.describe("switching ethos with content loaded", () => {
   });
 
   test("a Record result survives an ethos switch", async ({ app, page }) => {
-    // BUG: src/components/qr/RecordPanel.tsx renders a different component
-    // type per ethos (StageSwapRecord vs SplitDeckRecord). Each one calls
-    // useRecordFlow() itself, so React unmounts the old tree and the
-    // encodeResult, hexData and audioReady state are lost. Hoisting the hook
-    // into RecordPanel (or lifting encodeResult to a context) would fix it.
-    test.fail();
     await app.goto();
     await loadAndEnableMic(app);
     await app.record();
@@ -317,12 +310,9 @@ test.describe("tab switching", () => {
   });
 
   test("a Record result survives a Decode round-trip", async ({ app }) => {
-    // BUG: src/pages/QRPage.tsx renders both panels in plain <TabsContent>
-    // without forceMount, so Radix unmounts the inactive panel and
-    // RecordPanel (with the useRecordFlow state) is destroyed on every switch
-    // to Decode. src/components/ui/tabs.tsx spreads its props through, so the
-    // fix belongs in QRPage.
-    test.fail();
+    // Split-deck keeps HOLD beside the result, so "still armed" is visible
+    // without leaving the result stage.
+    await app.presetEthos("split-deck");
     await app.goto();
     await loadAndEnableMic(app);
     await app.record();
@@ -339,10 +329,6 @@ test.describe("tab switching", () => {
   });
 
   test("a hex-loaded packet survives a Record round-trip", async ({ app }) => {
-    // BUG: same root cause — DecodePanel (key="manual") is unmounted by the
-    // inactive TabsContent, so parsed/packetBytes and the HexInput's
-    // "loaded" state vanish; there is no URL to rebuild them from.
-    test.fail();
     const bytes = packetSeconds("12_5hz", 1);
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
@@ -376,10 +362,6 @@ test.describe("tab switching", () => {
   });
 
   test("a ?v= packet keeps its decoder override across a Record round-trip", async ({ app }) => {
-    // BUG: the packet comes back because QRPage rebuilds DecodePanel from
-    // the URL, but DecodePlayer's qualityOverride/status are component state
-    // inside the unmounted TabsContent (QRPage passes no forceMount).
-    test.fail();
     const bytes = packetSeconds("25hz", 1);
     await app.goto({ v: toBase64(bytes) });
     await app.decoderButton("50hz").click();
@@ -405,13 +387,6 @@ test.describe("microphone and AudioContext after the Record panel unmounts", () 
   });
 
   test("leaving /qr for PTT releases the microphone", async ({ app, page }) => {
-    // BUG: useRecordFlow's unmount cleanup (src/hooks/useRecordFlow.ts,
-    // "Cleanup on unmount" effect) disconnects the worklet and media source
-    // but never calls track.stop() on micRef.current, so the browser's
-    // recording indicator stays on after the Record panel is gone and nothing
-    // can reach the stream any more. The PTT link is the trigger because it
-    // unmounts QRPage whatever happens to tab mounting.
-    test.fail();
     await installMediaProbe(page);
     await app.goto();
     await loadAndEnableMic(app);
@@ -422,10 +397,6 @@ test.describe("microphone and AudioContext after the Record panel unmounts", () 
   });
 
   test("leaving /qr for PTT closes the recording AudioContext", async ({ app, page }) => {
-    // BUG: the same cleanup never closes actxRef.current, so every
-    // Record-panel mount that arms the mic leaks an AudioContext
-    // (Chromium caps these per page).
-    test.fail();
     await installMediaProbe(page);
     await app.goto();
     await loadAndEnableMic(app);
@@ -436,14 +407,6 @@ test.describe("microphone and AudioContext after the Record panel unmounts", () 
   });
 
   test("switching ethos leaves exactly one live microphone and at most one AudioContext", async ({ app, page }) => {
-    // BUG: RecordPanel swaps component types per ethos
-    // (src/components/qr/RecordPanel.tsx), which unmounts the old
-    // useRecordFlow instance; its cleanup leaves micRef's track live and
-    // actxRef open (src/hooks/useRecordFlow.ts), and the new instance opens
-    // a second capture and a second context on "Enable microphone". Either
-    // fix — hoisting the hook so the grant survives the switch, or stopping
-    // the track and closing the context on unmount — satisfies this.
-    test.fail();
     await installMediaProbe(page);
     await app.goto();
     await loadAndEnableMic(app);

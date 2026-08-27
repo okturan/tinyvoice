@@ -11,9 +11,10 @@ interface QualityPickerProps {
   refreshKey?: number;
   /** Stack options vertically (for narrow rail layouts) */
   vertical?: boolean;
+  disabled?: boolean;
 }
 
-export default function QualityPicker({ value, onChange, refreshKey = 0, vertical = false }: QualityPickerProps) {
+export default function QualityPicker({ value, onChange, refreshKey = 0, vertical = false, disabled = false }: QualityPickerProps) {
   const [cacheState, setCacheState] = useState<
     Record<Quality, boolean | undefined>
   >({
@@ -37,18 +38,25 @@ export default function QualityPicker({ value, onChange, refreshKey = 0, vertica
     <RadioGroup
       value={value}
       onValueChange={(v) => onChange(v as Quality)}
+      disabled={disabled}
       className={`flex gap-1 rounded-lg bg-[var(--mantle)] p-0.5 ${vertical ? "flex-col" : ""}`}
     >
       {QUALITY_OPTIONS.map((opt) => (
         <label
           key={opt.value}
-          className={`flex flex-1 cursor-pointer flex-col items-center rounded-md px-1 py-1.5 text-center transition-all ${
+          className={`flex flex-1 flex-col items-center rounded-md px-1 py-1.5 text-center transition-all ${
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "cursor-pointer"
+          } ${
             value === opt.value
               ? "bg-[var(--surface0)] text-[var(--text)]"
-              : "text-[var(--overlay)] hover:bg-[var(--surface0)]"
+              : disabled
+                ? "text-[var(--overlay)]"
+                : "text-[var(--overlay)] hover:bg-[var(--surface0)]"
           }`}
         >
-          <RadioGroupItem value={opt.value} className="sr-only" />
+          <RadioGroupItem value={opt.value} className="sr-only" disabled={disabled} />
           <span className="text-xs font-semibold">
             {opt.label}{" "}
             <span

@@ -703,9 +703,7 @@ test.describe("recording", () => {
     await expect(encodeProgress(app)).toBeVisible();
     await expect(waveformCanvas(app)).toBeHidden();
     await expect(app.page.getByText(HINT)).toBeVisible();
-    // NOTE: the first line reads "Encoding (12_5hz)..." today — the raw enum,
-    // not the "12.5hz" label (the test.fail() below pins the label); either spelling passes here.
-    await expect(app.codecStatus).toHaveText(/^(Encoding \(12[._]5hz\)|Compressing|Packing)\.\.\.$/);
+    await expect(app.codecStatus).toHaveText(/^(Encoding \(12\.5hz\)|Compressing|Packing)\.\.\.$/);
 
     // The button comes back whatever happened; a rejected or failed take would leave its message in the status line.
     await expect(app.holdButton).toHaveText("HOLD", { timeout: 15_000 });
@@ -724,10 +722,6 @@ test.describe("recording", () => {
   });
 
   test("the encoding status names the quality the way the rest of the app does", async ({ app }) => {
-    // BUG: codec-service.encode reports `Encoding (${quality})...` with the raw
-    // Quality enum value, so the card reads "Encoding (12_5hz)..." while every
-    // other surface goes through qualityLabel and says "12.5hz".
-    test.fail();
     await armedRecorder(app);
     await app.setOrt({ delayMs: 1500 }); // the encoder run keeps the "Encoding" line up for 1.5 s
     await app.hold(700);
@@ -762,16 +756,6 @@ test.describe("recording", () => {
   });
 
   test("a release that beat the worklet setup leaves no timer running and the next take reports its own length", async ({ app }) => {
-    // BUG: useRecordFlow.recDown flips isRecRef and then awaits
-    // audioWorklet.addModule / ensureMicStream. A pointerup that lands during
-    // those awaits runs recUp first (no chunks → "Too short"), after which
-    // recDown finishes wiring a source + worklet + timer that nothing ever
-    // stops: recUp already nulled timerRef, so the interval recDown installs
-    // afterwards keeps recTime ticking (and re-rendering) while idle, and the
-    // orphaned worklet keeps pushing into chunksRef, so the next real hold
-    // collects two sample streams and reports about twice its duration
-    // (a 1 s hold comes back as ~2.1 s).
-    test.fail();
     await armedRecorder(app);
     await instantTap(app);
     await expect(app.codecStatus).toHaveText(TOO_SHORT);
@@ -789,13 +773,6 @@ test.describe("recording", () => {
   });
 
   test("pressing HOLD while a recording is being encoded does not start another one", async ({ app }) => {
-    // BUG: RecordButton is only disabled on !readyToRecord, and recDown only
-    // guards on isRecRef (already false once recUp ran), so a pointerdown
-    // during "ENCODING" starts a second recording on top of the running
-    // encode: the button flips back to HOLD with a live timer, and when the
-    // first encode resolves it sets recordState "idle" while the mic is still
-    // being captured.
-    test.fail();
     await armedRecorder(app);
     await app.setOrt({ delayMs: 2000 }); // two runs → a 4 s ENCODING window for the press below
     await app.hold(700);

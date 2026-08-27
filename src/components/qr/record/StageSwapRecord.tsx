@@ -6,7 +6,7 @@ import { CodecCard } from "./CodecCard";
 import { RecordButton } from "./RecordButton";
 import { RecordFlowChrome } from "./RecordFlowChrome";
 import { TrimToggle } from "./TrimToggle";
-import { useRecordFlow } from "@/hooks/useRecordFlow";
+import { useRecordSession } from "@/contexts/RecordSessionContext";
 import { qualityLabel } from "@/lib/format";
 
 /**
@@ -14,7 +14,7 @@ import { qualityLabel } from "@/lib/format";
  * stages; encoding swaps the whole canvas to the result.
  */
 export default function StageSwapRecord() {
-  const flow = useRecordFlow();
+  const flow = useRecordSession();
 
   return (
     <div className="flex h-full min-h-0 flex-col">

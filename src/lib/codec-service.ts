@@ -4,6 +4,7 @@
  */
 
 import { MODEL_SIZE_ESTIMATES_MB, SR } from "@/lib/constants";
+import { qualityLabel } from "@/lib/format";
 import { loadModel, type ModelLoadProgress } from "@/lib/model-loader";
 import { areCached } from "@/lib/model-cache";
 import { istft } from "@/lib/istft";
@@ -177,7 +178,7 @@ class CodecService {
       this.loadCompressor(quality, undefined, signal),
     ]);
 
-    onProgress?.({ fraction: 0.1, status: `Encoding (${quality})...` });
+    onProgress?.({ fraction: 0.1, status: `Encoding (${qualityLabel(quality)})...` });
     const feats = await encSess.run({
       audio: new window.ort.Tensor("float32", audio, [1, audio.length]),
     });

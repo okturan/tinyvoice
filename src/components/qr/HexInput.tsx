@@ -13,19 +13,32 @@ interface HexInputProps {
   onTokenData: (data: Uint8Array) => string | void;
   onError?: (message: string) => void;
   disabled?: boolean;
+  initialSubmittedBytes?: number | null;
+  onSubmittedChange?: (bytes: number | null) => void;
+  draft?: string;
+  onDraftChange?: (text: string) => void;
 }
 
 export default function HexInput({
   onTokenData,
   onError,
   disabled = false,
+  initialSubmittedBytes = null,
+  onSubmittedChange,
+  draft,
+  onDraftChange,
 }: HexInputProps) {
   const fieldId = useId();
   const hintId = `${fieldId}-hint`;
   const errorId = `${fieldId}-error`;
-  const [value, setValue] = useState("");
+  const [localDraft, setLocalDraft] = useState("");
+  const value = draft ?? localDraft;
+  const setValue = (text: string) => {
+    if (onDraftChange) onDraftChange(text);
+    else setLocalDraft(text);
+  };
   const [error, setError] = useState("");
-  const [submittedBytes, setSubmittedBytes] = useState<number | null>(null);
+  const [submittedBytes, setSubmittedBytes] = useState<number | null>(initialSubmittedBytes);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const submit = () => {
@@ -39,6 +52,7 @@ export default function HexInput({
       }
       setError("");
       setSubmittedBytes(bytes.length);
+      onSubmittedChange?.(bytes.length);
       onError?.("");
     } catch (reason) {
       const message =
@@ -81,6 +95,7 @@ export default function HexInput({
           disabled={disabled}
           onClick={() => {
             setSubmittedBytes(null);
+            onSubmittedChange?.(null);
             requestAnimationFrame(() => textareaRef.current?.focus());
           }}
         >

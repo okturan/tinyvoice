@@ -14,6 +14,7 @@ export function QualityCard({ flow, vertical = false }: { flow: RecordFlow; vert
           onChange={flow.handleQualityChange}
           refreshKey={flow.codecContext.loadedQualities.length}
           vertical={vertical}
+          disabled={flow.codecContext.state === "loading"}
         />
       </CardContent>
     </Card>

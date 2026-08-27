@@ -67,6 +67,8 @@ export function useRecordFlow() {
   const workletRegisteredRef = useRef(false);
   const autoPickedQualityRef = useRef(false);
   const userPickedQualityRef = useRef(false);
+  const captureGenerationRef = useRef(0);
+  const recordStateRef = useRef<RecordState>("idle");
   const modelsLoaded = codecContext.isQualityLoaded(quality);
   const readyToRecord = modelsLoaded && audioReady;
   const loadingModels = !modelsLoaded && codecContext.state === "loading";
@@ -75,13 +77,43 @@ export function useRecordFlow() {
   const loadedStatus = `${qualityLabel(quality)} loaded`;
   const showDisplayStatus = Boolean(displayStatus && (!modelsLoaded || displayStatus !== loadedStatus));
 
+  const setRecordStateNow = useCallback((next: RecordState) => {
+    recordStateRef.current = next;
+    setRecordState(next);
+  }, []);
+
+  const teardownCaptureGraph = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (waveRafRef.current) {
+      cancelAnimationFrame(waveRafRef.current);
+      waveRafRef.current = null;
+    }
+    if (workletNodeRef.current) {
+      workletNodeRef.current.port.postMessage({ type: "stop" });
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
+    }
+    if (mediaSourceRef.current) {
+      mediaSourceRef.current.disconnect();
+      mediaSourceRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    analyserRef.current = null;
+  }, []);
+
   const resetResult = useCallback(() => {
     setEncodeResult(null);
     setHexData(null);
     setEncodeProgress(0);
     setStatusType("");
-    setStatus(loadedStatus);
-  }, [loadedStatus]);
+    setStatus(modelsLoaded ? loadedStatus : "");
+  }, [loadedStatus, modelsLoaded]);
 
   /**
    * Get (or refresh) the mic stream, honoring the preferred input device.
@@ -114,6 +146,7 @@ export function useRecordFlow() {
     setEncodeResult(null);
     setHexData(null);
     setEncodeProgress(0);
+    setStatusType("");
     setQuality(next);
   }, []);
 
@@ -233,65 +266,104 @@ export function useRecordFlow() {
   const recDown = useCallback(
     async (e: React.PointerEvent) => {
       e.preventDefault();
-      if (!readyToRecord || isRecRef.current) return;
+      if (!readyToRecord || recordStateRef.current !== "idle" || isRecRef.current) return;
+
+      const generation = ++captureGenerationRef.current;
+      const isCurrent = () =>
+        captureGenerationRef.current === generation && isRecRef.current;
 
       isRecRef.current = true;
       chunksRef.current = [];
       setEncodeResult(null);
       setHexData(null);
       setEncodeProgress(0);
-      setRecordState("recording");
+      setRecordStateNow("recording");
       setStatus("Recording...");
       setStatusType("");
 
-      const actx = actxRef.current!;
-      if (actx.state === "suspended") await actx.resume();
-
-      // Register worklet (only once per AudioContext)
-      if (!workletRegisteredRef.current) {
-        const url = getWorkletUrl();
-        await actx.audioWorklet.addModule(url);
-        workletRegisteredRef.current = true;
-      }
-
-      const mic = await ensureMicStream();
-      const source = actx.createMediaStreamSource(mic);
-      mediaSourceRef.current = source;
-
-      const gain = actx.createGain();
-      gain.gain.value = getMicGain();
-      gainNodeRef.current = gain;
-
-      const worklet = new AudioWorkletNode(actx, "recorder-processor");
-      workletNodeRef.current = worklet;
-      worklet.port.onmessage = (ev: MessageEvent) => {
-        if (ev.data.type === "samples") {
-          chunksRef.current.push(new Float32Array(ev.data.data));
+      const abandon = () => {
+        teardownCaptureGraph();
+        if (isRecRef.current && captureGenerationRef.current === generation) {
+          isRecRef.current = false;
+          setRecordStateNow("idle");
         }
       };
 
-      source.connect(gain);
-      gain.connect(worklet);
-      worklet.connect(actx.destination);
+      try {
+        if (!actxRef.current || actxRef.current.state === "closed") {
+          actxRef.current = new AudioContext({ sampleRate: SR });
+          workletRegisteredRef.current = false;
+        }
+        const actx = actxRef.current;
+        if (actx.state === "suspended") await actx.resume();
+        if (!isCurrent()) {
+          abandon();
+          return;
+        }
 
-      // Start recording
-      worklet.port.postMessage({ type: "start" });
+        if (!workletRegisteredRef.current) {
+          const url = getWorkletUrl();
+          await actx.audioWorklet.addModule(url);
+          workletRegisteredRef.current = true;
+        }
+        if (!isCurrent()) {
+          abandon();
+          return;
+        }
 
-      // Waveform + timer (post-gain, so the meter shows what gets encoded)
-      const analyser = actx.createAnalyser();
-      analyser.fftSize = 256;
-      gain.connect(analyser);
-      analyserRef.current = analyser;
-      recStartRef.current = Date.now();
-      setRecTime("0.0s");
-      timerRef.current = setInterval(() => {
-        setRecTime(
-          ((Date.now() - recStartRef.current) / 1000).toFixed(1) + "s",
-        );
-      }, 100);
-      drawWaveform();
+        const mic = await ensureMicStream();
+        if (!isCurrent()) {
+          abandon();
+          return;
+        }
+
+        const source = actx.createMediaStreamSource(mic);
+        mediaSourceRef.current = source;
+
+        const gain = actx.createGain();
+        gain.gain.value = getMicGain();
+        gainNodeRef.current = gain;
+
+        const worklet = new AudioWorkletNode(actx, "recorder-processor");
+        workletNodeRef.current = worklet;
+        worklet.port.onmessage = (ev: MessageEvent) => {
+          if (ev.data.type === "samples") {
+            chunksRef.current.push(new Float32Array(ev.data.data));
+          }
+        };
+
+        source.connect(gain);
+        gain.connect(worklet);
+        worklet.connect(actx.destination);
+
+        worklet.port.postMessage({ type: "start" });
+
+        const analyser = actx.createAnalyser();
+        analyser.fftSize = 256;
+        gain.connect(analyser);
+        analyserRef.current = analyser;
+        recStartRef.current = Date.now();
+        setRecTime("0.0s");
+        timerRef.current = setInterval(() => {
+          setRecTime(
+            ((Date.now() - recStartRef.current) / 1000).toFixed(1) + "s",
+          );
+        }, 100);
+        drawWaveform();
+
+        if (!isCurrent()) {
+          abandon();
+        }
+      } catch (err) {
+        if (!isCurrent()) return;
+        isRecRef.current = false;
+        teardownCaptureGraph();
+        setRecordStateNow("idle");
+        setStatusType("err");
+        setStatus((err as Error).message || "Microphone unavailable");
+      }
     },
-    [readyToRecord, drawWaveform, ensureMicStream],
+    [readyToRecord, drawWaveform, ensureMicStream, setRecordStateNow, teardownCaptureGraph],
   );
 
   const recUp = useCallback(
@@ -299,37 +371,10 @@ export function useRecordFlow() {
       if (e) e.preventDefault();
       if (!isRecRef.current) return;
       isRecRef.current = false;
+      captureGenerationRef.current += 1;
 
-      // Stop visuals
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      if (waveRafRef.current) {
-        cancelAnimationFrame(waveRafRef.current);
-        waveRafRef.current = null;
-      }
-
-      // Stop and disconnect worklet
-      if (workletNodeRef.current) {
-        workletNodeRef.current.port.postMessage({ type: "stop" });
-        workletNodeRef.current.disconnect();
-        workletNodeRef.current = null;
-      }
-
-      // Disconnect source + gain
-      if (mediaSourceRef.current) {
-        mediaSourceRef.current.disconnect();
-        mediaSourceRef.current = null;
-      }
-      if (gainNodeRef.current) {
-        gainNodeRef.current.disconnect();
-        gainNodeRef.current = null;
-      }
-
-      analyserRef.current = null;
-
-      setRecordState("encoding");
+      teardownCaptureGraph();
+      setRecordStateNow("encoding");
 
       // Force UI update before heavy WASM work
       await new Promise((r) => setTimeout(r, 50));
@@ -344,9 +389,10 @@ export function useRecordFlow() {
 
       const audio = trimEnabled ? trimLeadingSilence(assembled, SR) : assembled;
       if (audio.length < 4096) {
+        setEncodeProgress(0);
         setStatusType("err");
         setStatus("Too short — hold longer");
-        setRecordState("idle");
+        setRecordStateNow("idle");
         return;
       }
 
@@ -360,19 +406,21 @@ export function useRecordFlow() {
         setEncodeResult(result);
         // The result view shows the outcome; don't leave a stale
         // "QR ready" line behind in the codec card.
+        setEncodeProgress(0);
         setStatusType("");
         setStatus(`${qualityLabel(quality)} loaded`);
       } catch (e) {
+        setEncodeProgress(0);
         setStatusType("err");
         setStatus((e as Error).message);
       }
 
-      setRecordState("idle");
+      setRecordStateNow("idle");
     },
-    [quality, trimEnabled],
+    [quality, trimEnabled, setRecordStateNow, teardownCaptureGraph],
   );
 
-  // Cleanup on unmount
+  // Cleanup on unmount — release capture devices when the page is left.
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -382,6 +430,14 @@ export function useRecordFlow() {
         workletNodeRef.current.disconnect();
       }
       if (mediaSourceRef.current) mediaSourceRef.current.disconnect();
+      if (gainNodeRef.current) gainNodeRef.current.disconnect();
+      if (micRef.current) {
+        for (const track of micRef.current.getTracks()) track.stop();
+        micRef.current = null;
+      }
+      const actx = actxRef.current;
+      actxRef.current = null;
+      if (actx && actx.state !== "closed") void actx.close();
     };
   }, []);
 

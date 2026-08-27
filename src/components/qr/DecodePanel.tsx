@@ -1,57 +1,29 @@
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import Dropzone from "./Dropzone";
 import CameraScanner from "./CameraScanner";
 import DecodePlayer from "./DecodePlayer";
 import HexInput from "./HexInput";
-import { codec, type ParsedPacket } from "@/lib/codec-service";
-import { decodeQRString, validateVoicePacket } from "@/lib/qrParsing";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLayoutEthos } from "@/contexts/LayoutContext";
+import { useDecodeSession } from "@/contexts/DecodeSessionContext";
+import { decodeQRString } from "@/lib/qrParsing";
 import { qualityLabel } from "@/lib/format";
 
-type PacketSource = "hex" | "upload" | "camera" | "url";
-
-interface DecodePanelProps {
-  initialData?: Uint8Array | null;
-  initialError?: string;
-}
-
-export default function DecodePanel({ initialData, initialError }: DecodePanelProps) {
-  const [parsed, setParsed] = useState<ParsedPacket | null>(() => {
-    if (!initialData || validateVoicePacket(initialData)) return null;
-    return codec.parsePacket(initialData);
-  });
-  const [packetBytes, setPacketBytes] = useState<Uint8Array | null>(() => {
-    if (!initialData || validateVoicePacket(initialData)) return null;
-    return new Uint8Array(initialData);
-  });
-  const [error, setError] = useState(initialError ?? "");
-
-  const acceptPacket = useCallback((bytes: Uint8Array, source: PacketSource): string | void => {
-    const failure = validateVoicePacket(bytes);
-    if (failure) {
-      if (source === "hex") {
-        return failure === "Invalid voice data"
-          ? "These bytes are hexadecimal, but they are not a valid TinyVoice packet."
-          : failure;
-      }
-      setError(failure);
-      return;
-    }
-    const result = codec.parsePacket(bytes);
-    if (!result) {
-      if (source === "hex") {
-        return "These bytes are hexadecimal, but they are not a valid TinyVoice packet.";
-      }
-      setError("Invalid voice data");
-      return;
-    }
-    setError("");
-    setParsed(result);
-    setPacketBytes(new Uint8Array(bytes));
-  }, []);
+export default function DecodePanel() {
+  const {
+    parsed,
+    packetBytes,
+    error,
+    hexSubmittedBytes,
+    hexDraft,
+    setError,
+    setHexSubmittedBytes,
+    setHexDraft,
+    acceptPacket,
+    clearPacket,
+  } = useDecodeSession();
 
   const handleTokenData = useCallback(
     (data: Uint8Array) => {
@@ -74,18 +46,12 @@ export default function DecodePanel({ initialData, initialError }: DecodePanelPr
         setError("QR does not contain voice data");
       }
     },
-    [acceptPacket],
+    [acceptPacket, setError],
   );
 
   const handleError = useCallback((msg: string) => {
     setError(msg);
-  }, []);
-
-  const clearPacket = useCallback(() => {
-    setParsed(null);
-    setPacketBytes(null);
-    setError("");
-  }, []);
+  }, [setError]);
 
   const { ethos } = useLayoutEthos();
 
@@ -101,7 +67,11 @@ export default function DecodePanel({ initialData, initialError }: DecodePanelPr
         <Card className="border-[var(--surface0)] bg-[var(--mantle)] py-0">
           <CardContent className="px-4 py-3">
             <HexInput
+              initialSubmittedBytes={hexSubmittedBytes}
               onTokenData={handleHexData}
+              onSubmittedChange={setHexSubmittedBytes}
+              draft={hexDraft}
+              onDraftChange={setHexDraft}
               onError={(message) => {
                 if (!message) setError("");
               }}
@@ -146,13 +116,11 @@ export default function DecodePanel({ initialData, initialError }: DecodePanelPr
   if (ethos === "split-deck") {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto sm:flex-row sm:overflow-visible">
-        {/* Source rail */}
         <div className="flex flex-shrink-0 flex-col gap-2 sm:w-[260px]">
           {sources}
           {errorLine}
         </div>
 
-        {/* Player pane */}
         <div className="min-h-0 flex-1 sm:overflow-y-auto">
           {player || (
             <div className="flex h-full min-h-[200px] items-center justify-center rounded-xl border border-dashed border-[var(--surface0)]">
@@ -166,7 +134,6 @@ export default function DecodePanel({ initialData, initialError }: DecodePanelPr
     );
   }
 
-  // Stage swap: a loaded packet takes the whole canvas
   if (parsed && packetBytes) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3">

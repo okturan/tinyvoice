@@ -507,13 +507,7 @@ test.describe("packet replacement and tab switches", () => {
     expect((await app.ortState()).runs.map((r) => r.dims.tokens)).toEqual([[1, 375], [1, 25]]);
   });
 
-  test("(current behaviour) leaving the Decode tab mid-playback stops it; a hex-loaded packet is gone when you come back", async ({ app }) => {
-    // NOTE: TabsContent unmounts DecodePanel, so a pasted / uploaded /
-    // scanned packet and the hex text are discarded on a Record → Decode
-    // round trip, while a URL-loaded packet survives because QRPage
-    // recomputes it — persistence differs by source. The loss is pinned
-    // here as what happens today, not as the intended contract; the
-    // stop-on-leave half is the part that must hold.
+  test("leaving the Decode tab mid-playback stops it; a hex-loaded packet is still there when you come back", async ({ app }) => {
     await app.presetEthos("split-deck");
     await app.goto({ tab: "decode" });
     await app.loadModelsViaSettings(["12_5hz"]);
@@ -526,19 +520,14 @@ test.describe("packet replacement and tab switches", () => {
     await expect(app.playerCard).toBeHidden();
 
     await app.openTab("decode");
-    await expect(app.playerPlaceholder).toBeVisible();
-    await expect(app.playerCard).toBeHidden();
-    await expect(app.hexTextarea).toBeVisible();
-    await expect(app.hexTextarea).toHaveValue("");
+    await expect(app.playerCard).toBeVisible();
+    await expect(app.playerPlaceholder).toBeHidden();
+    await expectIdle(app);
+    await expect(app.editHexButton).toBeVisible();
     expect((await app.ortState()).runs).toHaveLength(1);
   });
 
-  test("(current behaviour) a URL-loaded packet survives a tab round trip, but its decoded buffer and status are reset", async ({ app }) => {
-    // NOTE: the buffer lives in the unmounted DecodePlayer, so the same
-    // packet is decoded again on the next Play (another decoder inference)
-    // and the status line regresses from "30.0s decoded" to the initial
-    // estimate. Pinned as current behaviour; lifting the state to QRPage
-    // would change the re-decode and status assertions, not the rest.
+  test("a URL-loaded packet keeps its decoded buffer and status after a tab round trip", async ({ app }) => {
     const bytes = packetSeconds("12_5hz", LONG_SECONDS);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
@@ -553,8 +542,8 @@ test.describe("packet replacement and tab switches", () => {
     await expect(app.playerCard).toBeVisible();
     await expect(app.newSourceButton).toBeVisible();
     await expectIdle(app);
-    await expect(app.playerStatus).toHaveText(initialStatus(bytes, "12_5hz"));
-    await expect(app.playerStatus).toHaveClass(/--overlay/);
+    await expect(app.playerStatus).toHaveText(`30.0s decoded from ${bytes.length} bytes`);
+    await expect(app.playerStatus).toHaveClass(/--green/);
     await expect(playHead(app)).toHaveCount(0);
     await expect(progressBar(app)).toBeHidden();
     await expect(app.downloadModelsButton).toBeHidden();
@@ -563,7 +552,7 @@ test.describe("packet replacement and tab switches", () => {
     await app.playButton.click();
     await expectPlaying(app);
     await expect(app.playerStatus).toHaveText(`30.0s decoded from ${bytes.length} bytes`);
-    expect((await app.ortState()).runs).toHaveLength(2);
+    expect((await app.ortState()).runs).toHaveLength(1);
   });
 });
 

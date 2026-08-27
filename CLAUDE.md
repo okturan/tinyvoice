@@ -14,7 +14,7 @@ React 19 + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui. Cloudflare Pages (fr
 src/
   pages/
     PTTPage.tsx         — Main PTT app (ethos-aware: split-deck two-pane, or stage-swap lobby/room "thumb dock")
-    QRPage.tsx          — Voice QR tool (tabs: Record / Decode)
+    QRPage.tsx          — Voice QR tool (controlled tabs; RecordSessionProvider + DecodeSessionProvider sit above the tab boundary)
   components/
     layout/             — TopBar, SettingsSheet, PageShell
     ptt/                — PTTButton, MessageList, ActivityLog, HexDump, WaveformCanvas, ShareModal, StatsStrip, ConnectionPanel
@@ -31,6 +31,8 @@ src/
     StatsContext.tsx     — Bytes sent/recv, encode/decode timing
     ThemeContext.tsx     — 6 themes with localStorage persistence
     LayoutContext.tsx    — Layout ethos (stage-swap | split-deck), persisted
+    RecordSessionContext.tsx — QR record flow, one useRecordFlow at page scope
+    DecodeSessionContext.tsx — QR decode packet, error, decoder override, decoded PCM
   hooks/
     useAudioRecorder.ts — AudioWorklet-based recording
     useRecordFlow.ts    — QR record flow: mic/worklet recording, gain, silence trim, encode

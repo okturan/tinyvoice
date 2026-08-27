@@ -5,14 +5,14 @@ import { CodecCard } from "./CodecCard";
 import { RecordButton } from "./RecordButton";
 import { RecordFlowChrome } from "./RecordFlowChrome";
 import { TrimToggle } from "./TrimToggle";
-import { useRecordFlow } from "@/hooks/useRecordFlow";
+import { useRecordSession } from "@/contexts/RecordSessionContext";
 
 /**
  * Split Deck ethos — controls dock into a left rail, the result owns the
  * wide right pane. Falls back to a stacked column on narrow screens.
  */
 export default function SplitDeckRecord() {
-  const flow = useRecordFlow();
+  const flow = useRecordSession();
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto sm:flex-row sm:overflow-visible">

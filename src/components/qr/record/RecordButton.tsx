@@ -67,7 +67,7 @@ export function RecordButton({ flow, size = "lg", showHint = true }: RecordButto
         onPointerDown={flow.recDown}
         onPointerUp={flow.recUp}
         onPointerLeave={flow.recUp}
-        disabled={!readyToRecord}
+        disabled={!readyToRecord || recordState === "encoding"}
       >
         {recordState === "encoding" ? <SpinnerIcon /> : <MicIcon size={size === "lg" ? 28 : 20} />}
         <span className={size === "sm" ? "text-[0.6rem]" : ""}>

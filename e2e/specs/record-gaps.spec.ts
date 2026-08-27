@@ -158,12 +158,6 @@ async function revokeMic(page: Page, message: string): Promise<void> {
 
 test.describe("encode status", () => {
   test("the encode step names the quality the way the rest of the card does", async ({ app }) => {
-    // BUG: codec-service.ts encode() interpolates the Quality enum value into
-    // its first progress line (`Encoding (${quality})...`), so the codec card
-    // reads "Encoding (12_5hz)..." while every other line in the same file
-    // and hook goes through qualityLabel() ("12.5hz"). useRecordFlow.recUp
-    // forwards info.status verbatim.
-    test.fail();
     await armedRecorder(app);
     await app.setOrt({ delayMs: 1500 }); // the encoder run holds the first status for 1.5 s
     await app.hold(800);
@@ -178,12 +172,6 @@ test.describe("encode status", () => {
 
 test.describe("status colour after a quality change", () => {
   test("an informational cache line written after a red 'Too short' is not red", async ({ app }) => {
-    // BUG: useRecordFlow.handleQualityChange leaves statusType "err" behind,
-    // and the cache-check effect that follows only rewrites `status`
-    // ("25hz compressor needs download"), never `statusType`, so CodecCard
-    // paints the new informational line with text-[var(--red)]. Only
-    // handleLoadModels resets the type first.
-    test.fail();
     await app.goto();
     await downloadFromCard(app, "12_5hz");
     await reload(app);
@@ -206,11 +194,6 @@ test.describe("status colour after a quality change", () => {
 
 test.describe("← New recording after the models were deleted", () => {
   test("does not claim the deleted quality is still loaded", async ({ app }) => {
-    // BUG: useRecordFlow.resetResult sets status to `${label} loaded`
-    // unconditionally. With the models gone (modelsLoaded false after
-    // Settings › Models › Delete downloaded models) showDisplayStatus renders
-    // it, so the card shows "Choose models" over a grey "12.5hz loaded" line.
-    test.fail();
     await armedRecorder(app, "stage-swap");
     await app.record(800);
     await expect(app.newRecordingButton).toBeVisible();
@@ -231,13 +214,6 @@ test.describe("← New recording after the models were deleted", () => {
 
 test.describe("quality picker while models load", () => {
   test("the radios are disabled while the card says Loading models...", async ({ app }) => {
-    // BUG: QualityCard/QualityPicker never disable the RadioGroup while
-    // codecContext.state === "loading", so a pick during "Load cached models"
-    // goes through. handleLoadModels captured the old quality and, on
-    // completion, writes a green "12.5hz loaded" under 25hz's "Choose models",
-    // requests the mic for a quality that cannot record, and HOLD stays
-    // disabled.
-    test.fail();
     await app.goto();
     await downloadFromCard(app, "12_5hz");
     await reload(app);
@@ -264,12 +240,6 @@ test.describe("microphone lost between holds", () => {
   test.use({ strictPageErrors: false });
 
   test("a failed mic re-acquisition is reported in red and the recorder returns to idle", async ({ app, page, pageErrors }) => {
-    // BUG: useRecordFlow.recDown awaits ensureMicStream() with no try/catch.
-    // When the live track has ended and getUserMedia rejects, the rejection
-    // escapes the pointerdown handler (uncaught page error), isRecRef stays
-    // true with no worklet or timer wired up, and the release finds no
-    // samples and reports "Too short — hold longer" instead of the mic error.
-    test.fail();
     await installMicProbe(page);
     await armedRecorder(app);
     await revokeMic(page, "E2E: microphone revoked");
@@ -340,11 +310,6 @@ test.describe("encode failure", () => {
   });
 
   test("the codec card's encode progress bar goes away after a failed encode", async ({ app }) => {
-    // BUG: useRecordFlow.recUp's catch branch leaves encodeProgress at the
-    // last reported fraction (10 after the encoder step), and CodecCard
-    // renders its Progress whenever 0 < encodeProgress < 100, so a stalled
-    // bar sits under the green loaded line until the next hold.
-    test.fail();
     await armedRecorder(app);
     await app.setOrt({ failRun: "encoder", failMessage: "encoder exploded" });
     await app.hold(800);

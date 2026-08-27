@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import HexSheet from "./HexSheet";
 import { useCodecContext } from "@/contexts/CodecContext";
+import { useDecodeSession } from "@/contexts/DecodeSessionContext";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
 import { SR } from "@/lib/constants";
@@ -27,12 +28,19 @@ export default function DecodePlayer({
   packetBytes,
 }: DecodePlayerProps) {
   const codecContext = useCodecContext();
-  const [qualityOverride, setQualityOverride] = useState<Quality | null>(null);
+  const {
+    qualityOverride,
+    setQualityOverride,
+    playerStatus: status,
+    setPlayerStatus: setStatus,
+    playerStatusType: statusType,
+    setPlayerStatusType: setStatusType,
+    decodedPcm,
+    setDecodedPcm,
+  } = useDecodeSession();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState("");
-  const [statusType, setStatusType] = useState<"" | "ok" | "err">("");
   const [hexOpen, setHexOpen] = useState(false);
 
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -70,9 +78,6 @@ export default function DecodePlayer({
     setIsPlaying(false);
     setIsLoading(false);
     setProgress(0);
-    setStatus("");
-    setStatusType("");
-    setQualityOverride(null);
 
     return () => {
       playbackGenerationRef.current += 1;
@@ -96,6 +101,7 @@ export default function DecodePlayer({
       stopPlayback();
       setQualityOverride(newQ);
       audioBufferRef.current = null;
+      setDecodedPcm(null);
       setIsPlaying(false);
       setIsLoading(false);
       setProgress(0);
@@ -104,7 +110,7 @@ export default function DecodePlayer({
       );
       setStatusType("");
     },
-    [autoLabel, qualityOverride, stopPlayback],
+    [autoLabel, qualityOverride, setQualityOverride, setDecodedPcm, setStatus, setStatusType, stopPlayback],
   );
 
   const handlePlay = useCallback(async () => {
@@ -117,6 +123,14 @@ export default function DecodePlayer({
 
     const generation = ++playbackGenerationRef.current;
     const isCurrent = () => playbackGenerationRef.current === generation;
+    if (!audioBufferRef.current && decodedPcm) {
+      if (!playCtxRef.current || playCtxRef.current.state === "closed") {
+        playCtxRef.current = new AudioContext({ sampleRate: SR });
+      }
+      const restored = playCtxRef.current.createBuffer(1, decodedPcm.length, SR);
+      restored.getChannelData(0).set(decodedPcm);
+      audioBufferRef.current = restored;
+    }
     const cachedBuffer = audioBufferRef.current;
 
     try {
@@ -181,6 +195,7 @@ export default function DecodePlayer({
       const buf = playCtxRef.current.createBuffer(1, audio.length, SR);
       buf.getChannelData(0).set(audio);
       audioBufferRef.current = buf;
+      setDecodedPcm(new Float32Array(audio));
 
       const src = playCtxRef.current.createBufferSource();
       src.buffer = buf;
@@ -211,12 +226,16 @@ export default function DecodePlayer({
     }
   }, [
     isPlaying,
+    decodedPcm,
     effectiveQuality,
     effectiveQualityLabel,
     parsed.tokenBytes,
     packetBytes.length,
     tokenCount,
     codecContext,
+    setDecodedPcm,
+    setStatus,
+    setStatusType,
     stopPlayback,
   ]);
 

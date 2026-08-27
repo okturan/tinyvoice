@@ -374,30 +374,19 @@ test.describe("a failed second source with a packet already loaded", () => {
 // ── Client-side navigation to /qr?v= ────────────────────────────
 
 test.describe("client-side navigation to /qr?v=", () => {
-  test("pushState to /qr?v= hands the packet to Decode but leaves Record selected (current behaviour)", async ({ app, page }) => {
+  test("pushState to /qr?v= selects the Decode tab even when Record was showing", async ({ app, page }) => {
     const bytes = packetSeconds("50hz", 1, 41);
     await app.goto();
     await expect(app.tab("record")).toHaveAttribute("data-state", "active");
 
     await pushVoiceUrl(page, toBase64(bytes));
-    // QRPage's <Tabs defaultValue> is only read on mount, so the tab does
-    // not follow the URL the way a fresh load of /qr?v= does.
-    await expect(app.tab("record")).toHaveAttribute("data-state", "active");
-    await expect(app.tab("decode")).toHaveAttribute("data-state", "inactive");
-    await expect(app.holdButton).toBeVisible();
-    await expect(app.playerCard).toBeHidden();
-
-    await app.openTab("decode");
+    await expect(app.tab("decode")).toHaveAttribute("data-state", "active");
+    await expect(app.tab("record")).toHaveAttribute("data-state", "inactive");
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "50hz"));
     await expect(app.newSourceButton).toBeVisible();
   });
 
   test("pushState to /qr?v= selects the Decode tab", async ({ app, page }) => {
-    // BUG: QRPage computes defaultTab from ?v= but passes it as the
-    // uncontrolled Tabs `defaultValue`, so an in-app navigation to a voice
-    // URL (history.pushState / a <Link>) updates the DecodePanel key without
-    // moving the user to the Decode tab (src/pages/QRPage.tsx).
-    test.fail();
     const bytes = packetSeconds("50hz", 1, 42);
     await app.goto();
     await pushVoiceUrl(page, toBase64(bytes));
