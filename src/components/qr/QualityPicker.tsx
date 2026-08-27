@@ -1,38 +1,20 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { areCached } from "@/lib/model-cache";
+import { useCodecContext } from "@/contexts/CodecContext";
 import { QUALITY_OPTIONS } from "@/lib/constants";
 import { Quality } from "@/types/codec";
-import { useEffect, useState } from "react";
 
 interface QualityPickerProps {
   value: Quality;
   onChange: (quality: Quality) => void;
-  /** Bump to trigger a cache re-check (e.g. after model download) */
+  /** Unused: cache marks now follow the shared context record. */
   refreshKey?: number;
   /** Stack options vertically (for narrow rail layouts) */
   vertical?: boolean;
   disabled?: boolean;
 }
 
-export default function QualityPicker({ value, onChange, refreshKey = 0, vertical = false, disabled = false }: QualityPickerProps) {
-  const [cacheState, setCacheState] = useState<
-    Record<Quality, boolean | undefined>
-  >({
-    [Quality.Hz50]: undefined,
-    [Quality.Hz25]: undefined,
-    [Quality.Hz12_5]: undefined,
-  });
-
-  useEffect(() => {
-    const keys = QUALITY_OPTIONS.map((q) => `compressor_${q.value}.onnx`);
-    areCached(keys).then((results) => {
-      const state: Record<string, boolean> = {};
-      for (const q of QUALITY_OPTIONS) {
-        state[q.value] = results[`compressor_${q.value}.onnx`] ?? false;
-      }
-      setCacheState(state as Record<Quality, boolean>);
-    });
-  }, [refreshKey]);
+export default function QualityPicker({ value, onChange, vertical = false, disabled = false }: QualityPickerProps) {
+  const { isCachedForRecording, cacheReady } = useCodecContext();
 
   return (
     <RadioGroup
@@ -41,49 +23,46 @@ export default function QualityPicker({ value, onChange, refreshKey = 0, vertica
       disabled={disabled}
       className={`flex gap-1 rounded-lg bg-[var(--mantle)] p-0.5 ${vertical ? "flex-col" : ""}`}
     >
-      {QUALITY_OPTIONS.map((opt) => (
-        <label
-          key={opt.value}
-          className={`flex flex-1 flex-col items-center rounded-md px-1 py-1.5 text-center transition-all ${
-            disabled
-              ? "cursor-not-allowed opacity-50"
-              : "cursor-pointer"
-          } ${
-            value === opt.value
-              ? "bg-[var(--surface0)] text-[var(--text)]"
-              : disabled
-                ? "text-[var(--overlay)]"
-                : "text-[var(--overlay)] hover:bg-[var(--surface0)]"
-          }`}
-        >
-          <RadioGroupItem value={opt.value} className="sr-only" disabled={disabled} />
-          <span className="text-xs font-semibold">
-            {opt.label}{" "}
+      {QUALITY_OPTIONS.map((opt) => {
+        const cached = cacheReady && isCachedForRecording(opt.value);
+        return (
+          <label
+            key={opt.value}
+            className={`flex flex-1 flex-col items-center rounded-md px-1 py-1.5 text-center transition-all ${
+              disabled
+                ? "cursor-not-allowed opacity-50"
+                : "cursor-pointer"
+            } ${
+              value === opt.value
+                ? "bg-[var(--surface0)] text-[var(--text)]"
+                : disabled
+                  ? "text-[var(--overlay)]"
+                  : "text-[var(--overlay)] hover:bg-[var(--surface0)]"
+            }`}
+          >
+            <RadioGroupItem value={opt.value} className="sr-only" disabled={disabled} />
+            <span className="text-xs font-semibold">
+              {opt.label}{" "}
+              <span
+                className={`text-[0.55rem] ${
+                  cached ? "text-[var(--green)]" : "text-[var(--surface2)]"
+                }`}
+              >
+                {cacheReady ? (cached ? "\u2713" : "\u2193") : ""}
+              </span>
+            </span>
             <span
-              className={`text-[0.55rem] ${
-                cacheState[opt.value as Quality]
-                  ? "text-[var(--green)]"
+              className={`mt-px text-[0.5rem] transition-colors ${
+                value === opt.value
+                  ? "text-[var(--subtext)]"
                   : "text-[var(--surface2)]"
               }`}
             >
-              {cacheState[opt.value as Quality] === undefined
-                ? ""
-                : cacheState[opt.value as Quality]
-                  ? "\u2713"
-                  : "\u2193"}
+              {opt.description}
             </span>
-          </span>
-          <span
-            className={`mt-px text-[0.5rem] transition-colors ${
-              value === opt.value
-                ? "text-[var(--subtext)]"
-                : "text-[var(--surface2)]"
-            }`}
-          >
-            {opt.description}
-          </span>
-        </label>
-      ))}
+          </label>
+        );
+      })}
     </RadioGroup>
   );
 }

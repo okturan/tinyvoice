@@ -8,13 +8,13 @@ import { test, expect } from "../support/test";
 import type { QrApp } from "../support/app";
 import { ALL_QUALITIES, LABEL, type Quality } from "../support/packets";
 
-/** MODEL_SIZE_ESTIMATES_MB: 595 MB shared encoder + per-quality compressor/decoder. */
+/** Record intent: 595 MB shared encoder + per-quality compressor (no decoder). */
 const ENCODER_MB = 595;
-const PAIR_MB: Record<Quality, number> = { "12_5hz": 76 + 141, "25hz": 74 + 139, "50hz": 70 + 135 };
-const FULL_MB: Record<Quality, number> = {
-  "12_5hz": ENCODER_MB + PAIR_MB["12_5hz"], // 812
-  "25hz": ENCODER_MB + PAIR_MB["25hz"], // 808
-  "50hz": ENCODER_MB + PAIR_MB["50hz"], // 800
+const COMP_MB: Record<Quality, number> = { "12_5hz": 76, "25hz": 74, "50hz": 70 };
+const RECORD_MB: Record<Quality, number> = {
+  "12_5hz": ENCODER_MB + COMP_MB["12_5hz"], // 671
+  "25hz": ENCODER_MB + COMP_MB["25hz"], // 669
+  "50hz": ENCODER_MB + COMP_MB["50hz"], // 665
 };
 
 const CACHED = "✓";
@@ -22,7 +22,11 @@ const NOT_CACHED = "↓";
 const TOO_SHORT = "Too short — hold longer";
 const HINT = "hold to record · release to encode";
 
-function modelsFor(q: Quality): string[] {
+function recordFiles(q: Quality): string[] {
+  return [`compressor_${q}.onnx`];
+}
+
+function pairFor(q: Quality): string[] {
   return [`compressor_${q}.onnx`, `decoder_${q}.onnx`];
 }
 
@@ -187,7 +191,7 @@ test.describe("fresh state", () => {
 
     for (const q of ALL_QUALITIES) {
       const button = app.dialogRow(q).getByRole("button");
-      await expect(button).toHaveText(`Download (~${FULL_MB[q]} MB)`);
+      await expect(button).toHaveText(`Download (~${RECORD_MB[q]} MB)`);
       await expect(button).toBeEnabled();
     }
     await expect(app.dialogRow("12_5hz").getByText("suggested", { exact: true })).toBeVisible();
@@ -209,7 +213,7 @@ test.describe("fresh state", () => {
     await expect(app.codecStatus).toHaveCount(0);
     await app.codecButton.click();
     await expect(app.dialogRow("50hz").getByText("suggested", { exact: true })).toBeVisible();
-    await expect(app.dialogRow("50hz").getByRole("button")).toHaveText(`Download (~${FULL_MB["50hz"]} MB)`);
+    await expect(app.dialogRow("50hz").getByRole("button")).toHaveText(`Download (~${RECORD_MB["50hz"]} MB)`);
     await expect(app.dialogRow("12_5hz").getByText("suggested", { exact: true })).toHaveCount(0);
   });
 });
@@ -220,12 +224,8 @@ test.describe("downloading from the codec card", () => {
     models.set("*", { hang: true });
     await app.codecButton.click();
     await app.startDialogDownload(["12_5hz"]);
-    await expect.poll(() => models.hungCount).toBe(3);
-    // NOTE: arming the record tab fetches the decoder too (codec-service.loadModelSet
-    // always loads all three) although recording never runs it — only Preview does.
-    // The dialog prices it in, so this is current behaviour, not a requirement;
-    // a lazy-decoder optimisation would change these lists.
-    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor("12_5hz")].sort());
+    await expect.poll(() => models.hungCount).toBe(2);
+    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...recordFiles("12_5hz")].sort());
 
     // Dialog: rows lock, progress + status + Cancel download appear.
     await expect(app.downloadDialog.getByRole("progressbar")).toBeVisible();
@@ -254,7 +254,7 @@ test.describe("downloading from the codec card", () => {
     await expect(qualityOption(app, "12_5hz")).toContainText(CACHED);
     await expect(qualityOption(app, "25hz")).toContainText(NOT_CACHED);
     await expect(qualityOption(app, "50hz")).toContainText(NOT_CACHED);
-    expect((await app.ortState()).sessions.sort()).toEqual(["encoder.onnx", ...modelsFor("12_5hz")].sort());
+    expect((await app.ortState()).sessions.sort()).toEqual(["encoder.onnx", ...recordFiles("12_5hz")].sort());
 
     await app.codecButton.click();
     await expect(app.holdButton).toBeEnabled();
@@ -262,7 +262,7 @@ test.describe("downloading from the codec card", () => {
     // The hook's status now equals the loaded line, so the card does not repeat it.
     await expect(app.codecStatus).toHaveCount(0);
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
   });
 
   test("the dialog closes itself when the download completes and Settings agrees", async ({ app, models }) => {
@@ -286,7 +286,7 @@ test.describe("downloading from the codec card", () => {
     models.set("*", { hang: true });
     await app.codecButton.click();
     await app.startDialogDownload(["12_5hz"]);
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(2);
     await app.page.keyboard.press("Escape");
     await expect(app.downloadDialog).toBeHidden();
     await expect(app.codecButton).toHaveText("Loading models...");
@@ -313,11 +313,11 @@ test.describe("downloading from the codec card", () => {
     // A second attempt starts over from scratch.
     models.reset();
     await app.codecButton.click();
-    await expect(app.dialogRow("12_5hz").getByRole("button")).toHaveText(`Download (~${FULL_MB["12_5hz"]} MB)`);
+    await expect(app.dialogRow("12_5hz").getByRole("button")).toHaveText(`Download (~${RECORD_MB["12_5hz"]} MB)`);
     await app.startDialogDownload(["12_5hz"]);
     await expect(app.downloadDialog).toBeHidden({ timeout: 15_000 });
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
-    expect(models.requests.length).toBe(6);
+    expect(models.requests.length).toBe(4);
   });
 
   test("Select multiple qualities downloads both pairs and either loaded quality can record", async ({ app, models }) => {
@@ -328,18 +328,18 @@ test.describe("downloading from the codec card", () => {
     await expect(app.dialogRow("12_5hz").getByRole("checkbox")).toBeChecked();
     await expect(app.dialogRow("25hz").getByRole("checkbox")).toBeChecked();
     await expect(app.dialogRow("50hz").getByRole("checkbox")).not.toBeChecked();
-    for (const q of ALL_QUALITIES) await expect(app.dialogRow(q)).toContainText(`~${FULL_MB[q]} MB`);
-    await expect(go).toHaveText(`Download selected (~${ENCODER_MB + PAIR_MB["12_5hz"] + PAIR_MB["25hz"]} MB)`); // 1025
+    for (const q of ALL_QUALITIES) await expect(app.dialogRow(q)).toContainText(`~${RECORD_MB[q]} MB`);
+    await expect(go).toHaveText(`Download selected (~${ENCODER_MB + COMP_MB["12_5hz"] + COMP_MB["25hz"]} MB)`); // 745
 
-    models.set("*", { hang: true }); // five 1 MiB fakes otherwise finish before the loading state can be seen
+    models.set("*", { hang: true });
     await go.click();
-    await expect.poll(() => models.hungCount).toBe(5);
+    await expect.poll(() => models.hungCount).toBe(3);
     await expect(app.downloadDialog.getByRole("button", { name: "Cancel download" })).toBeVisible();
     await expect(app.dialogRow("50hz").getByRole("checkbox")).toBeDisabled();
     models.release();
     await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
     expect([...models.requests].sort()).toEqual(
-      ["encoder.onnx", ...modelsFor("12_5hz"), ...modelsFor("25hz")].sort(),
+      ["encoder.onnx", ...recordFiles("12_5hz"), ...recordFiles("25hz")].sort(),
     );
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(qualityOption(app, "12_5hz")).toContainText(CACHED);
@@ -357,26 +357,12 @@ test.describe("downloading from the codec card", () => {
     await expect(app.holdButton).toBeDisabled();
     await expect(app.codecButton).toHaveText("Choose models");
     await expect(app.codecStatus).toHaveText("50hz compressor needs download");
-    expect(models.requests.length).toBe(5);
+    expect(models.requests.length).toBe(3);
   });
 });
 
 test.describe("download failure from the dialog", () => {
-  // codec.loadModels rethrows and ModelDownloadDialog.handleDownload does not
-  // catch, so every failed dialog download reaches the page as an unhandled
-  // rejection. Both tests here trip it, hence the describe-wide relaxation of
-  // the fixture's page-error check; the test.fail() pins that it should not
-  // happen at all, and this relaxation should go with the fix.
-  test.use({ strictPageErrors: false });
-
   test("a failed download re-arms the dialog and tells the user what went wrong without throwing", async ({ app, models, pageErrors }) => {
-    // BUG: ModelDownloadDialog.handleDownload awaits codec.loadModels with no
-    // try/catch. CodecContext.loadModels sets statusText "Error" and rethrows,
-    // the rejection escapes the click handler ("Failed to download …: HTTP 500"
-    // lands in pageErrors), and nothing on the QR page shows it: the dialog
-    // silently re-arms its buttons, the codec card's own status stays empty.
-    // Only Settings › Models reads "Error".
-    test.fail();
     await app.goto();
     models.set("*", { status: 500, delayMs: 400 });
     await app.codecButton.click();
@@ -385,25 +371,19 @@ test.describe("download failure from the dialog", () => {
     await expect(row).toBeDisabled();
     await expect(app.downloadDialog.getByRole("button", { name: "Cancel download" })).toBeVisible();
 
-    // The dialog stays open and re-arms itself — this part works today.
     await expect(row).toBeEnabled();
-    await expect(row).toHaveText(`Download (~${FULL_MB["12_5hz"]} MB)`);
+    await expect(row).toHaveText(`Download (~${RECORD_MB["12_5hz"]} MB)`);
     await expect(app.downloadDialog).toBeVisible();
     await expect(app.downloadDialog.getByRole("button", { name: "Cancel download" })).toBeHidden();
     await expect(app.downloadDialog.getByRole("progressbar")).toBeHidden();
     await expect(app.downloadDialog.locator('[data-slot="dialog-footer"]').getByRole("button", { name: "Close" })).toBeVisible();
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
 
-    // What is missing: a visible reason, and no unhandled rejection.
-    await expect(app.page.getByText(/Failed to download .+: HTTP 500/)).toBeVisible();
+    await expect(app.downloadDialog.getByText(/Failed to download .+: HTTP 500/)).toBeVisible();
     expect(pageErrors).toEqual([]);
   });
 
   test("after a failed download the record tab is back to Choose models and a retry works", async ({ app, models }) => {
-    // NOTE: the codec card shows nothing after this failure and Settings › Models
-    // only says "Error" (CodecContext.loadModels discards the message) — the
-    // test.fail() above pins the missing message; this test only checks that
-    // the tab and Settings have re-armed and accept the same download again.
     await app.goto();
     models.set("*", { status: 500, delayMs: 400 });
     await app.codecButton.click();
@@ -411,7 +391,7 @@ test.describe("download failure from the dialog", () => {
     const row = app.dialogRow("12_5hz").getByRole("button");
     await expect(row).toBeDisabled();
     await expect(row).toBeEnabled();
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
 
     await app.page.keyboard.press("Escape");
     await expect(app.downloadDialog).toBeHidden();
@@ -427,7 +407,7 @@ test.describe("download failure from the dialog", () => {
 
     models.reset();
     await downloadFromCard(app, "12_5hz");
-    expect(models.requests.length).toBe(6);
+    expect(models.requests.length).toBe(4);
     await enableMic(app);
   });
 });
@@ -452,9 +432,7 @@ test.describe("cached models after a reload", () => {
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(app.codecButton).toHaveCount(0);
     await expect(app.codecStatus).toHaveCount(0);
-    // NOTE: current behaviour — the cached decoder is instantiated as well (a
-    // WASM session recording never uses); see the download test above.
-    expect((await app.ortState()).sessions.sort()).toEqual(["encoder.onnx", ...modelsFor("12_5hz")].sort());
+    expect((await app.ortState()).sessions.sort()).toEqual(["encoder.onnx", ...recordFiles("12_5hz")].sort());
   });
 
   test("a session that fails to initialise from cache is reported in red on the card and can be retried", async ({ app }) => {
@@ -506,8 +484,8 @@ test.describe("cached models after a reload", () => {
     await app.codecButton.click();
     await expect(encoderRow(app).getByText("cached", { exact: true })).toBeVisible();
     await expect(app.dialogRow("25hz").getByText("suggested", { exact: true })).toBeVisible();
-    await expect(app.dialogRow("25hz").getByRole("button")).toHaveText(`Download (~${PAIR_MB["25hz"]} MB)`); // 213
-    await expect(app.dialogRow("50hz").getByRole("button")).toHaveText(`Download (~${PAIR_MB["50hz"]} MB)`); // 205
+    await expect(app.dialogRow("25hz").getByRole("button")).toHaveText(`Download (~${COMP_MB["25hz"]} MB)`);
+    await expect(app.dialogRow("50hz").getByRole("button")).toHaveText(`Download (~${COMP_MB["50hz"]} MB)`);
     await expect(app.dialogRow("12_5hz").getByRole("button")).toHaveText("Load from cache");
     await expect(app.dialogRow("12_5hz").getByText("cached", { exact: true })).toBeVisible();
     await app.page.keyboard.press("Escape");
@@ -540,21 +518,10 @@ test.describe("cached models after a reload", () => {
     await expect(app.codecStatus).toHaveText("Encoder needs download");
     await expect(app.codecButton).toHaveText("Choose models");
     await expect(app.holdButton).toBeDisabled();
-    // NOTE: current behaviour — the picker's ✓ tracks only compressor_<q>.onnx
-    // (QualityPicker), so 12.5hz keeps its tick although the shared encoder is
-    // gone and the card says so. Whether the tick should mean "pair cached" or
-    // "ready to record" is an open question.
-    await expect(qualityOption(app, "12_5hz")).toContainText(CACHED);
+    await expect(qualityOption(app, "12_5hz")).toContainText(NOT_CACHED);
   });
 
   test("the codec card notices the encoder deleted from Settings without a quality change", async ({ app }) => {
-    // BUG: useRecordFlow only re-checks the cache when the quality or the
-    // loaded set changes (useRecordFlow.ts cache effect), and ModelManagement's
-    // per-file trash refreshes its own useModelCache instance. After deleting
-    // encoder.onnx in Settings the card keeps offering "Load cached models" /
-    // "Cached models available" — a click would download the 595 MB it just
-    // promised were on disk.
-    test.fail();
     await app.goto();
     await downloadFromCard(app, "12_5hz");
     await reload(app);
@@ -572,14 +539,6 @@ test.describe("cached models after a reload", () => {
   });
 
   test("the record tab's dialog notices a model file deleted from Settings", async ({ app }) => {
-    // BUG: ModelDownloadDialog reads the cache through its own useModelCache
-    // instance, which is only refreshed after a download the dialog itself
-    // started. ModelManagement's per-file trash (and Settings' "Delete
-    // downloaded models") refresh a different instance, so the record tab's
-    // dialog keeps badging encoder.onnx "cached" and offers "Load from cache"
-    // for a pair whose encoder is gone — clicking it re-downloads 595 MB
-    // without saying so.
-    test.fail();
     await app.goto();
     await downloadFromCard(app, "12_5hz");
     await reload(app);
@@ -617,7 +576,7 @@ test.describe("switching quality", () => {
 
     await app.codecButton.click();
     await expect(app.dialogRow("25hz").getByText("suggested", { exact: true })).toBeVisible();
-    await expect(app.dialogRow("25hz").getByRole("button")).toHaveText(`Download (~${PAIR_MB["25hz"]} MB)`);
+    await expect(app.dialogRow("25hz").getByRole("button")).toHaveText(`Download (~${COMP_MB["25hz"]} MB)`);
     await expect(app.dialogRow("12_5hz").getByRole("button")).toHaveText("Loaded");
     await expect(app.dialogRow("12_5hz").getByRole("button")).toBeDisabled();
     await expect(app.dialogRow("12_5hz").getByText("loaded", { exact: true })).toBeVisible();
@@ -629,7 +588,7 @@ test.describe("switching quality", () => {
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(app.codecButton).toHaveCount(0);
     await expect(app.codecStatus).toHaveCount(0);
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
     expect(await micRequests(app)).toBe(1);
   });
 
@@ -637,7 +596,7 @@ test.describe("switching quality", () => {
     await app.goto();
     await expect(app.qualityRadio("12_5hz")).toHaveAttribute("aria-checked", "true");
     await app.loadModelsViaSettings(["50hz"]);
-    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor("50hz")].sort());
+    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...pairFor("50hz")].sort());
 
     await expect(app.qualityRadio("50hz")).toHaveAttribute("aria-checked", "true");
     await expect(app.qualityRadio("12_5hz")).toHaveAttribute("aria-checked", "false");

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import TrashIcon from "@/components/ui/trash-icon";
 import { Badge } from "@/components/ui/badge";
 import { useCodecContext } from "@/contexts/CodecContext";
@@ -55,6 +56,7 @@ const ALL_MODELS = MODEL_GROUPS.flatMap((g) => g.models);
 export function ModelManagement() {
   const codec = useCodecContext();
   const { cachedKeys, loading, refresh } = useModelCache();
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const totalCachedMB = ALL_MODELS
     .filter((m) => cachedKeys.has(m.name))
@@ -65,9 +67,14 @@ export function ModelManagement() {
     refresh();
   };
 
-  const handleClearAll = async () => {
-    await codec.clearModelCache();
-    refresh();
+  const handleClearAll = () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      setTimeout(() => setConfirmClear(false), 3000);
+      return;
+    }
+    void codec.clearModelCache();
+    setConfirmClear(false);
   };
 
   return (
@@ -135,14 +142,31 @@ export function ModelManagement() {
         <span className="text-[0.6rem] text-[var(--overlay)] font-mono">
           {loading ? "Checking..." : `Total cached: ~${totalCachedMB} MB`}
         </span>
-        <button
-          onClick={handleClearAll}
-          disabled={cachedKeys.size === 0}
-          className="text-[0.6rem] text-[var(--overlay)] hover:text-[var(--red)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
-          title="Delete all downloaded model files from browser storage"
-        >
-          Delete downloaded models
-        </button>
+        {confirmClear ? (
+          <div className="flex gap-1">
+            <button
+              onClick={handleClearAll}
+              className="py-1 px-2 rounded-md text-[0.6rem] font-semibold text-[var(--red)] border border-[var(--red)]/40 bg-[var(--red)]/10 cursor-pointer transition-colors hover:bg-[var(--red)]/20"
+            >
+              Yes, delete models
+            </button>
+            <button
+              onClick={() => setConfirmClear(false)}
+              className="py-1 px-2 rounded-md text-[0.6rem] text-[var(--overlay)] border border-[var(--surface0)] cursor-pointer hover:text-[var(--text)] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleClearAll}
+            disabled={cachedKeys.size === 0}
+            className="text-[0.6rem] text-[var(--overlay)] hover:text-[var(--red)] disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
+            title="Delete all downloaded model files from browser storage"
+          >
+            Delete downloaded models
+          </button>
+        )}
       </div>
     </div>
   );

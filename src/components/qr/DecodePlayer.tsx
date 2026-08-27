@@ -6,7 +6,8 @@ import { useCodecContext } from "@/contexts/CodecContext";
 import { useDecodeSession } from "@/contexts/DecodeSessionContext";
 import { codec, type ParsedPacket } from "@/lib/codec-service";
 import { Quality } from "@/types/codec";
-import { SR } from "@/lib/constants";
+import { MODEL_SIZE_ESTIMATES_MB, SR } from "@/lib/constants";
+import { decoderFile } from "@/contexts/CodecContext";
 import { autoDecoderLabel, qualityLabel } from "@/lib/format";
 import CodeIcon from "@/components/ui/code-icon";
 import { HexStream } from "@/components/audio/HexStream";
@@ -50,9 +51,10 @@ export default function DecodePlayer({
 
   const tokenCount = parsed.tokenBytes.length / 2;
   const effectiveQuality = qualityOverride || parsed.quality;
-  const qualityReady = codecContext.isQualityLoaded(effectiveQuality);
+  const qualityReady = codecContext.canPlay(effectiveQuality);
   const loadingModels = !qualityReady && codecContext.state === "loading";
   const effectiveQualityLabel = qualityLabel(effectiveQuality);
+  const decoderDownloadLabel = `Download ${effectiveQualityLabel} decoder (~${MODEL_SIZE_ESTIMATES_MB[decoderFile(effectiveQuality)] ?? 0} MB)`;
   const estDuration = codec.estimateDuration(tokenCount, effectiveQuality);
   const autoLabel = autoDecoderLabel(parsed.quality, parsed.hasMagicByte);
 
@@ -159,13 +161,17 @@ export default function DecodePlayer({
       }
 
       const q = effectiveQuality;
-      if (!codecContext.isQualityLoaded(q)) {
+      if (!codecContext.canPlay(q)) {
         setStatusType("");
-        setStatus(`Downloading ${effectiveQualityLabel} models...`);
-        const ok = await codecContext.loadModels(q);
+        setStatus(`Downloading ${effectiveQualityLabel} decoder...`);
+        const result = await codecContext.loadModels(q, "play");
         if (!isCurrent()) return;
-        if (!ok) {
-          setStatus("Download cancelled");
+        if (!result.ok) {
+          if (result.reason === "cancelled") setStatus("Download cancelled");
+          else {
+            setStatusType("err");
+            setStatus(result.message ?? codecContext.errorText);
+          }
           return;
         }
       }
@@ -241,10 +247,14 @@ export default function DecodePlayer({
 
   const handleDownloadModels = useCallback(async () => {
     setStatusType("");
-    setStatus(`Downloading ${effectiveQualityLabel} models...`);
-    const ok = await codecContext.loadModels(effectiveQuality);
-    if (!ok) {
-      setStatus("Download cancelled");
+    setStatus(`Downloading ${effectiveQualityLabel} decoder...`);
+    const result = await codecContext.loadModels(effectiveQuality, "play");
+    if (!result.ok) {
+      if (result.reason === "cancelled") setStatus("Download cancelled");
+      else {
+        setStatusType("err");
+        setStatus(result.message ?? codecContext.errorText);
+      }
       return;
     }
     setStatus("");
@@ -341,7 +351,7 @@ export default function DecodePlayer({
           onClick={handleDownloadModels}
           disabled={loadingModels}
         >
-          {loadingModels ? "Loading models..." : `Download ${effectiveQualityLabel} models`}
+          {loadingModels ? "Loading models..." : decoderDownloadLabel}
         </Button>
       )}
 
@@ -381,14 +391,16 @@ export default function DecodePlayer({
 
       <p
         className={`min-h-[1.2em] text-[0.72rem] ${
-          statusType === "ok"
-            ? "text-[var(--green)]"
-            : statusType === "err"
-              ? "text-[var(--red)]"
+          statusType === "err" || codecContext.errorText
+            ? "text-[var(--red)]"
+            : statusType === "ok"
+              ? "text-[var(--green)]"
               : "text-[var(--overlay)]"
         }`}
       >
-        {loadingModels ? codecContext.statusText : status || initialStatus}
+        {loadingModels
+          ? codecContext.statusText
+          : codecContext.errorText || status || initialStatus}
       </p>
 
       {/* Hex Sheet */}

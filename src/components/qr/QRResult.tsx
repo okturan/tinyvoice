@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { codec } from "@/lib/codec-service";
+import { decoderFile, useCodecContext } from "@/contexts/CodecContext";
 import { Quality } from "@/types/codec";
-import { SR } from "@/lib/constants";
+import { MODEL_SIZE_ESTIMATES_MB, SR } from "@/lib/constants";
 import { bytesToBase64 } from "@/lib/qrParsing";
-import { autoDecoderLabel } from "@/lib/format";
+import { autoDecoderLabel, qualityLabel } from "@/lib/format";
 import { unpackTokens } from "@/lib/wire-format";
 import { Loader2, Play, Square } from "lucide-react";
 import CopyIcon from "@/components/ui/copy-icon";
@@ -47,6 +47,7 @@ export default function QRResult({
   const [previewProgress, setPreviewProgress] = useState(0);
   const [previewStatus, setPreviewStatus] = useState("");
   const [decoderOverride, setDecoderOverride] = useState<Quality | null>(null);
+  const codecContext = useCodecContext();
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
@@ -58,6 +59,10 @@ export default function QRResult({
   const autoLabel = parsedPacket
     ? autoDecoderLabel(parsedPacket.quality, parsedPacket.hasMagicByte)
     : "Auto";
+  const effectiveQuality = decoderOverride ?? parsedPacket?.quality ?? Quality.Hz12_5;
+  const canPlay = codecContext.canPlay(effectiveQuality);
+  const decoderDownloadLabel = `Download ${qualityLabel(effectiveQuality)} decoder (~${MODEL_SIZE_ESTIMATES_MB[decoderFile(effectiveQuality)] ?? 0} MB)`;
+  const loadingDecoder = !canPlay && codecContext.state === "loading";
 
   const stopPlayback = useCallback(() => {
     const source = sourceRef.current;
@@ -205,17 +210,23 @@ export default function QRResult({
         return;
       }
 
-      setPreviewStatus("Decoding...");
       setPreviewProgress(0);
       setPreviewLoading(true);
-      const audio = await codec.decode(
+      if (!codecContext.canPlay(effectiveQuality)) {
+        setPreviewStatus(`Downloading ${qualityLabel(effectiveQuality)} decoder...`);
+        const result = await codecContext.loadModels(effectiveQuality, "play");
+        if (!isCurrent()) return;
+        if (!result.ok) {
+          setPreviewStatus(result.message ?? (result.reason === "cancelled" ? "Download cancelled" : "Error"));
+          setPreviewProgress(0);
+          setPreviewLoading(false);
+          return;
+        }
+      }
+      setPreviewStatus("Decoding...");
+      const audio = await codecContext.decode(
         packed,
         decoderOverride ?? undefined,
-        (info) => {
-          if (!isCurrent()) return;
-          setPreviewProgress(info.fraction * 100);
-          setPreviewStatus(info.status);
-        },
       );
       if (!isCurrent()) return;
 
@@ -258,7 +269,9 @@ export default function QRResult({
     packed,
     playing,
     decoderOverride,
+    effectiveQuality,
     previewLoading,
+    codecContext,
     stopPlayback,
   ]);
 
@@ -318,6 +331,16 @@ export default function QRResult({
             </>
           )}
         </Button>
+
+        {!canPlay && (
+          <Button
+            size="sm"
+            onClick={preview}
+            disabled={previewLoading || loadingDecoder}
+          >
+            {previewLoading || loadingDecoder ? "Loading..." : decoderDownloadLabel}
+          </Button>
+        )}
 
         <Button variant="outline" size="sm" onClick={copyUrl}>
           <CopyIcon size={12} />

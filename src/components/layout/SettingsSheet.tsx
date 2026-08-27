@@ -153,6 +153,9 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
                   <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
                 </div>
+                {codec.errorText && (
+                  <p className="mt-1.5 text-[0.7rem] text-[var(--red)]">{codec.errorText}</p>
+                )}
                 {codec.state === "loading" && (
                   <Progress value={codec.progress} className="mt-2 h-1.5" />
                 )}
@@ -208,6 +211,7 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
         <ModelDownloadDialog
           open={downloadOpen}
           onOpenChange={setDownloadOpen}
+          intent="both"
         />
       </SheetContent>
     </Sheet>

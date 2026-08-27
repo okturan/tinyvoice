@@ -198,7 +198,7 @@ test.describe("download dialog — single select", () => {
     await expect(app.dialogRow("25hz").getByText("suggested", { exact: true })).toBeVisible();
     await expect(app.dialogRow("12_5hz").getByText("suggested", { exact: true })).toHaveCount(0);
     await expect(app.dialogRow("50hz").getByText("suggested", { exact: true })).toHaveCount(0);
-    await expect(rowButton(app, "25hz")).toHaveText("Download (~808 MB)");
+    await expect(rowButton(app, "25hz")).toHaveText("Download (~669 MB)");
   });
 
   test("after one download the encoder is cached, that row is locked and the others shrink", async ({ app, models }) => {
@@ -344,13 +344,6 @@ test.describe("while models are loading", () => {
   });
 
   test("the inventory in the same sheet picks up a download made from its dialog", async ({ app }) => {
-    // BUG: ModelManagement and ModelDownloadDialog each own a separate
-    // useModelCache() instance. The dialog calls its own refresh() after a
-    // download, so the inventory rendered directly below keeps saying
-    // "not cached" / "Total cached: ~0 MB" until the sheet is closed and
-    // reopened. See ModelManagement.tsx (useModelCache) vs
-    // ModelDownloadDialog.tsx handleDownload → refresh().
-    test.fail();
     await app.goto();
     await app.openSettings("Models");
     await expect(totalCached(app)).toHaveText("Total cached: ~0 MB");
@@ -434,24 +427,14 @@ test.describe("cancelling a download", () => {
 });
 
 test.describe("download failure", () => {
-  // NOTE: every failed download from the dialog escapes as an unhandled
-  // rejection (ModelDownloadDialog.handleDownload has no try/catch) — see
-  // the test.fail() in "download failure reporting" below. Until that is
-  // fixed these flows cannot run under strict page errors.
-  test.use({ strictPageErrors: false });
-
-  test("an HTTP 500 on the encoder shows Error, keeps the dialog open, and a retry fetches only the encoder", async ({ app, models }) => {
+  test("an HTTP 500 on the encoder shows Error, keeps the dialog open, and a retry fetches the aborted siblings too", async ({ app, models }) => {
     await app.goto();
     models.set("encoder.onnx", { status: 500 });
-    // Park the pair so the failure is the last thing the codec reports
-    // (the "Error stays on screen" test below covers the alternative).
     models.set("compressor_12_5hz.onnx", { hang: true });
     models.set("decoder_12_5hz.onnx", { hang: true });
     await openDialogViaSettings(app);
     await app.startDialogDownload(["12_5hz"]);
 
-    // The sheet's status line behind the modal is the first thing to say Error;
-    // the dialog is still open with its rows re-armed.
     await expect(statusBehindDialog(app)).toHaveText("Error");
     await expect(app.downloadDialog).toBeVisible();
     await expect(footerButton(app, "Close")).toBeVisible();
@@ -462,59 +445,42 @@ test.describe("download failure", () => {
     await app.page.keyboard.press("Escape");
     await expect(app.downloadDialog).toBeHidden();
     await expect(app.settingsCodecStatus).toHaveText("Error");
-    // NOTE: current behaviour — the sheet has no red state: the dot is
-    // coloured from modelsLoaded alone, so Error is the same grey as
-    // "Not loaded" (CodecStatus.tsx has an error colour, unused).
     await expect(codecDot(app)).toHaveClass(/--surface2/);
     await expect(app.settingsCodecButton).toHaveText("Choose models");
     await expect(app.settingsCodecButton).toBeEnabled();
     await expect(sheetButton(app, "Cancel")).toHaveCount(0);
     expect(models.requestsFor("encoder.onnx")).toBe(1);
 
-    // Let the pair land, fix the encoder, retry: only the encoder is fetched again.
-    await expect.poll(() => models.hungCount).toBe(2);
     models.release();
-    await expect.poll(async () => (await app.ortState()).sessions.length).toBe(2);
     models.set("encoder.onnx", {});
+    models.set("compressor_12_5hz.onnx", {});
+    models.set("decoder_12_5hz.onnx", {});
     await app.settingsCodecButton.click();
     await app.startDialogDownload(["12_5hz"]);
     await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
     await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
     await expect(codecDot(app)).toHaveClass(/--green/);
     expect(models.requestsFor("encoder.onnx")).toBe(2);
-    expect(models.requests.length).toBe(4);
+    expect(models.requests.length).toBe(6);
     expect((await app.ortState()).sessions.sort()).toEqual(fullSet("12_5hz"));
   });
 
   test("Error stays on screen while the sibling downloads finish", async ({ app, models }) => {
-    // BUG: CodecContext.loadModels' progress callback keeps writing
-    // statusText after the load has failed. Promise.all in
-    // codec-service.loadModelSet rejects on the encoder's HTTP 500 while the
-    // compressor/decoder streams keep reporting, so "Error" is replaced by a
-    // progress line such as "217.0 / ~812 MB" although state is "error".
-    test.fail();
     await app.goto();
     models.set("encoder.onnx", { status: 500 });
     await openDialogViaSettings(app);
     await app.startDialogDownload(["12_5hz"]);
     await expect(statusBehindDialog(app)).toHaveText("Error");
-    await expect.poll(async () => (await app.ortState()).sessions.length).toBe(2);
+    await expect(footerButton(app, "Close")).toBeVisible();
 
     await app.page.keyboard.press("Escape");
     await expect(app.settingsCodecStatus).toHaveText("Error");
     await expect(app.settingsCodecButton).toHaveText("Choose models");
   });
 
-  test("a protobuf parse failure currently wipes the whole downloaded cache", async ({ app, models }) => {
-    // NOTE: current behaviour — CodecContext.loadModels answers any error
-    // message containing "protobuf" with clearModelCache(), which also
-    // removes the pair that just downloaded and initialised fine, and any
-    // other quality's files. Dropping only the file that failed to parse
-    // (delCache(name)) would be the proportionate action; this pins what
-    // the app does today, not what it should do.
+  test("a protobuf parse failure drops only the file ORT rejected", async ({ app, models }) => {
     await app.goto();
     await app.setOrt({ failCreate: "encoder", failMessage: "protobuf parsing failed" });
-    // Park the encoder so the pair is cached and initialised before it lands.
     models.set("encoder.onnx", { hang: true });
     await openDialogViaSettings(app);
     await app.startDialogDownload(["12_5hz"]);
@@ -530,18 +496,21 @@ test.describe("download failure", () => {
     await expect(app.settingsCodecStatus).toHaveText("Error");
     expect([...models.requests].sort()).toEqual(fullSet("12_5hz"));
 
-    // Reload: nothing is offered from cache any more.
     await app.goto();
     await expect(app.codecButton).toHaveText("Choose models");
-    await expect(app.codecStatus).toHaveCount(0);
+    await expect(app.codecStatus).toHaveText("Encoder needs download");
     await app.openSettings("Models");
-    await expect(app.settingsCodecStatus).toHaveText("Not loaded");
-    await expect(totalCached(app)).toHaveText("Total cached: ~0 MB");
-    await expect(app.settingsSheet.getByText("not cached", { exact: true })).toHaveCount(7);
+    await expect(app.settingsCodecStatus).toHaveText("Cached models available");
+    await expect(totalCached(app)).toHaveText("Total cached: ~217 MB");
+    await expect(app.settingsSheet.getByText("not cached", { exact: true })).toHaveCount(5);
+    await expect(fileRow(app, "encoder.onnx").getByText("not cached", { exact: true })).toBeVisible();
+    await expect(fileRow(app, "compressor_12_5hz.onnx").getByText("cached", { exact: true })).toBeVisible();
+    await expect(fileRow(app, "decoder_12_5hz.onnx").getByText("cached", { exact: true })).toBeVisible();
     await app.settingsCodecButton.click();
     await expect(app.downloadDialog).toBeVisible();
-    await expect(app.downloadDialog.getByText("cached", { exact: true })).toHaveCount(0);
-    await expect(rowButton(app, "12_5hz")).toHaveText("Download (~812 MB)");
+    await expect(encoderRow(app).getByText("cached", { exact: true })).toHaveCount(0);
+    await expect(app.dialogRow("12_5hz").getByText("cached", { exact: true })).toBeVisible();
+    await expect(rowButton(app, "12_5hz")).toHaveText(`Download (~${ENCODER_MB} MB)`);
   });
 
   test("any other session-init failure keeps the cache", async ({ app, models }) => {
@@ -576,13 +545,6 @@ test.describe("download failure", () => {
 
 test.describe("download failure reporting", () => {
   test("a failed download is reported without an uncaught page error", async ({ app, models, pageErrors }) => {
-    // BUG: ModelDownloadDialog.handleDownload awaits codec.loadModels with no
-    // try/catch and CodecContext.loadModels rethrows, so a failed download
-    // from the dialog is an unhandled promise rejection; the dialog itself
-    // renders no error text (only the sheet beneath the modal says "Error").
-    // DecodePlayer.handleDownloadModels leaks the same way. Any fix that
-    // catches the rejection makes this pass.
-    test.fail();
     await app.goto();
     models.set("*", { status: 500 });
     await openDialogViaSettings(app);
@@ -633,7 +595,7 @@ test.describe("deleting downloaded models", () => {
 
     await app.openSettings("Models");
     await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
-    await expect(totalCached(app)).toHaveText("Total cached: ~812 MB");
+    await expect(totalCached(app)).toHaveText("Total cached: ~671 MB");
     await deleteButton(app).click();
     await sheetButton(app, "Yes, delete models").click();
 
@@ -655,17 +617,10 @@ test.describe("deleting downloaded models", () => {
     await expect(app.settingsCodecStatus).toHaveText("Not loaded");
     await expect(totalCached(app)).toHaveText("Total cached: ~0 MB");
     await expect(inventoryDeleteButton(app)).toBeDisabled();
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
   });
 
   test("the inventory below reflects the wipe", async ({ app }) => {
-    // BUG: the Codec section's "Yes, delete models" calls
-    // codec.clearModelCache() (CodecContext) but never refreshes
-    // ModelManagement's own useModelCache() instance, so the list underneath
-    // keeps its "cached"/"ready" badges, "Total cached: ~812 MB" and an
-    // enabled delete button until the sheet is reopened. SettingsSheet.tsx
-    // handleClear vs ModelManagement.tsx.
-    test.fail();
     await app.goto();
     await app.loadModelsViaSettings(["12_5hz"]);
     await app.openSettings("Models");
@@ -682,12 +637,6 @@ test.describe("deleting downloaded models", () => {
   });
 
   test("the download dialog reflects the wipe", async ({ app }) => {
-    // BUG: same root cause — ModelDownloadDialog's useModelCache() instance
-    // was populated when the sheet opened and is not refreshed by the Codec
-    // section's delete, so the dialog still shows "cached" badges and offers
-    // "Load from cache" for files that no longer exist — a click on which
-    // downloads the ~812 MB the user was just told were cached.
-    test.fail();
     await app.goto();
     await app.loadModelsViaSettings(["12_5hz"]);
     await app.openSettings("Models");
@@ -701,12 +650,7 @@ test.describe("deleting downloaded models", () => {
     await expect(rowButton(app, "12_5hz")).toHaveText("Download (~812 MB)");
   });
 
-  test("the inventory's own Delete downloaded models currently wipes on one click, with no confirm step", async ({ app }) => {
-    // NOTE: current behaviour — the Codec section a few lines up asks for a
-    // second click before wiping, while ModelManagement's button removes
-    // up to ~1.2 GB on the first one. Two delete buttons with different
-    // semantics in one tab is a product decision still to be made, not a
-    // requirement this test defends.
+  test("the inventory's own Delete downloaded models asks for the same two-step confirm", async ({ app }) => {
     await app.goto();
     await app.loadModelsViaSettings(["12_5hz"]);
     await app.openSettings("Models");
@@ -714,6 +658,11 @@ test.describe("deleting downloaded models", () => {
     await expect(app.settingsSheet.getByText("cached", { exact: true })).toHaveCount(3);
 
     await inventoryDeleteButton(app).click();
+    await expect(sheetButton(app, "Yes, delete models")).toBeVisible();
+    await expect(sheetButton(app, "Cancel")).toBeVisible();
+    await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
+
+    await sheetButton(app, "Yes, delete models").click();
     await expect(app.settingsCodecStatus).toHaveText("Downloaded model cache cleared");
     await expect(sheetButton(app, "Yes, delete models")).toHaveCount(0);
     await expect(totalCached(app)).toHaveText("Total cached: ~0 MB");
@@ -771,13 +720,6 @@ test.describe("deleting one file", () => {
   });
 
   test("the download dialog in the same sheet reflects the per-file delete", async ({ app }) => {
-    // BUG: same root cause as the wipe bugs above — ModelDownloadDialog's
-    // useModelCache() instance was read when the sheet opened and
-    // ModelManagement.handleDelete refreshes only its own. Until the sheet
-    // is reopened the dialog still badges encoder.onnx "cached" and prices
-    // the other qualities without it (25hz at ~213 MB), a click on which
-    // fetches 808 MB.
-    test.fail();
     await app.goto();
     await app.loadModelsViaSettings(["12_5hz"]);
     await app.openSettings("Models");
@@ -793,12 +735,6 @@ test.describe("deleting one file", () => {
 
 test.describe("persistence across reloads", () => {
   test("the sheet announces a cached 12.5hz set after a reload", async ({ app }) => {
-    // BUG: CodecContext's mount check calls codec.isCoreModelsCached() with
-    // no argument, and that defaults to Quality.Hz50 — so a cached 12.5hz
-    // (or 25hz) set is reported as "Not loaded" while the record card next
-    // to it says "Cached models available". CodecContext.tsx mount effect →
-    // codec-service.ts isCoreModelsCached(quality = Quality.Hz50).
-    test.fail();
     await app.goto();
     await app.loadModelsViaSettings(["12_5hz"]);
     await app.goto();

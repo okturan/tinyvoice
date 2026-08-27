@@ -259,7 +259,7 @@ test.describe("switching ethos with content loaded", () => {
     await app.submitHex(toHex(bytes));
     await app.decoderButton("25hz").click();
     await expect(app.playerStatus).toHaveText("Decoder set to 25hz");
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 25hz decoder (~139 MB)");
 
     await app.switchEthosViaSettings("stage-swap");
     await expectFrame(page, "stage-swap");
@@ -267,7 +267,7 @@ test.describe("switching ethos with content loaded", () => {
     await expect(stageHeader(page, `${bytes.length} B · 12.5hz`)).toBeVisible();
     await expect(app.playerStatus).toHaveText("Decoder set to 25hz");
     expect(await app.selectedDecoderLabels()).toEqual(["25hz"]);
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 25hz decoder (~139 MB)");
 
     await app.switchEthosViaSettings("split-deck");
     await expect(app.playerPlaceholder).toBeHidden();
@@ -358,7 +358,7 @@ test.describe("tab switching", () => {
     // QRPage rebuilds DecodePanel from the URL (key={voiceB64}).
     await expect(stageHeader(page, `${bytes.length} B · 25hz`)).toBeVisible();
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 25hz decoder (~139 MB)");
   });
 
   test("a ?v= packet keeps its decoder override across a Record round-trip", async ({ app }) => {
@@ -435,7 +435,7 @@ test.describe("reload", () => {
     await expect(app.tab("decode")).toHaveAttribute("aria-selected", "true");
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "12_5hz"));
     await expect(app.newSourceButton).toBeVisible();
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz decoder (~141 MB)");
   });
 
   test("a hex-loaded packet is gone after a reload and the page reopens on Record", async ({ app, page }) => {
@@ -521,7 +521,7 @@ test.describe("navigation", () => {
     await app.newSourceButton.click();
     const p25 = packetSeconds("25hz", 1, 2);
     await app.submitHex(toHex(p25));
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 25hz decoder (~139 MB)");
     // Only the one Settings download hit the network; nothing was re-fetched on the way round.
     expect([...models.requests].sort()).toEqual(["compressor_12_5hz.onnx", "decoder_12_5hz.onnx", "encoder.onnx"]);
   });

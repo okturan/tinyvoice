@@ -24,7 +24,7 @@ import {
   tokensFor,
 } from "../support/packets";
 
-const MODELS_12_5 = ["compressor_12_5hz.onnx", "decoder_12_5hz.onnx", "encoder.onnx"];
+const DECODER_12_5 = ["decoder_12_5hz.onnx"];
 
 /** Long enough that a click meant to land mid-playback always does. */
 const LONG_SECONDS = 30;
@@ -71,16 +71,11 @@ test.describe("play, decode, stop", () => {
     await expect(app.downloadModelsButton).toBeDisabled();
     await expect(app.playButton).toBeDisabled();
     await expect(progressBar(app)).toBeVisible();
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(1);
     models.reset();
     await expect(app.downloadModelsButton).toBeHidden({ timeout: 15_000 });
     await expect(progressBar(app)).toBeHidden();
-    // NOTE: a decode-only load fetches the encoder and the compressor along
-    // with the decoder (~850 MB of real models to hear one packet) although
-    // the player only ever runs decoder_*; codec-service.decodeFromTokens
-    // can already lazy-load just the decoder. The set is pinned here as
-    // current behaviour, not as the required one.
-    expect([...models.requests].sort()).toEqual(MODELS_12_5);
+    expect([...models.requests].sort()).toEqual(DECODER_12_5);
     await expectIdle(app);
     expect((await app.ortState()).runs).toEqual([]);
 
@@ -324,14 +319,10 @@ test.describe("failures", () => {
     await expect(app.playerStatus).toHaveText("decoder init failed", { timeout: 15_000 });
     await expect(app.playerStatus).toHaveClass(/--red/);
     await expectIdle(app);
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz decoder (~141 MB)");
     await expect(app.downloadModelsButton).toBeEnabled();
     await expect(progressBar(app)).toBeHidden();
-    // The sibling loads keep going after the decoder session fails, so wait
-    // until every fetch has been issued before taking the count.
-    // NOTE: same three-model set as the first test — pinned as current
-    // behaviour.
-    await expect.poll(() => [...models.requests].sort()).toEqual(MODELS_12_5);
+    await expect.poll(() => [...models.requests].sort()).toEqual(DECODER_12_5);
     expect((await app.ortState()).sessions).not.toContain("decoder_12_5hz.onnx");
     const requestsAfterFailure = models.requests.length;
 
@@ -352,23 +343,11 @@ test.describe("failures", () => {
   });
 
   test("Settings keeps reporting a failed load as an error", async ({ app }) => {
-    // BUG: CodecContext.loadModels writes statusText "Error" when
-    // loadModelSet rejects, but the sibling loads started by the same
-    // Promise.all keep running with a progress callback that is never
-    // detached — the compressor finishing a moment later overwrites the line
-    // with "Loaded compressor_12_5hz.onnx" while `state` stays "error".
-    // (CodecContext.tsx loadModels catch block; codec-service loadModelSet.)
-    test.fail();
     const bytes = packetSeconds("12_5hz", 4);
     await app.goto({ v: toBase64(bytes) });
     await app.setOrt({ failCreate: "decoder", failMessage: "decoder init failed" });
     await app.playButton.click();
     await expect(app.playerStatus).toHaveText("decoder init failed", { timeout: 15_000 });
-    // Let the sibling loads finish so the status line has settled.
-    await expect.poll(async () => (await app.ortState()).sessions.sort(), { timeout: 10_000 }).toEqual([
-      "compressor_12_5hz.onnx",
-      "encoder.onnx",
-    ]);
 
     await app.openSettings("Models");
     await expect(app.settingsCodecButton).toHaveText("Choose models");
@@ -384,13 +363,6 @@ test.describe("download failures", () => {
   test.use({ strictPageErrors: false });
 
   test("a failed download from the player's Download button is reported in red, not swallowed", async ({ app, models, pageErrors }) => {
-    // BUG: DecodePlayer.handleDownloadModels has no try/catch. When
-    // CodecContext.loadModels rethrows (here the decoder session fails to
-    // initialise) the status line keeps saying "Downloading 12.5hz
-    // models...", nothing turns red, and the rejection surfaces as an
-    // uncaught exception. handlePlay's catch block handles the same failure
-    // correctly. (DecodePlayer.tsx handleDownloadModels.)
-    test.fail();
     const bytes = packetSeconds("12_5hz", 2);
     await app.goto({ v: toBase64(bytes) });
     await app.setOrt({ failCreate: "decoder", failMessage: "decoder init failed" });
@@ -398,10 +370,10 @@ test.describe("download failures", () => {
 
     await app.downloadModelsButton.click();
     await expect(app.downloadModelsButton).toHaveText("Loading models...");
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(1);
     models.reset();
 
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models", { timeout: 15_000 });
+    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz decoder (~141 MB)", { timeout: 15_000 });
     await expect(app.downloadModelsButton).toBeEnabled();
     await expectIdle(app);
     await expect(app.playerStatus).toContainText("decoder init failed", { timeout: 2_500 });
@@ -424,7 +396,7 @@ test.describe("cancelled downloads", () => {
     await expect(progressBar(app)).toBeVisible();
     // While the codec context is loading, the player relays its status.
     await expect(app.playerStatus).toHaveText(/Loading models\.\.\.|Downloading .+\.onnx/);
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(1);
 
     await app.openSettings("Models");
     await app.settingsSheet.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -434,7 +406,7 @@ test.describe("cancelled downloads", () => {
     await expect(app.playerStatus).toHaveText("Download cancelled");
     await expect(app.playerStatus).toHaveClass(/--overlay/);
     await expectIdle(app);
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz decoder (~141 MB)");
     await expect(app.downloadModelsButton).toBeEnabled();
     await expect(progressBar(app)).toBeHidden();
     expect((await app.ortState()).runs).toEqual([]);
@@ -457,14 +429,14 @@ test.describe("cancelled downloads", () => {
     await expect(app.downloadModelsButton).toBeDisabled();
     await expect(app.playButton).toBeDisabled();
     await expect(progressBar(app)).toBeVisible();
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(1);
 
     await app.openSettings("Models");
     await app.settingsSheet.getByRole("button", { name: "Cancel", exact: true }).click();
     await app.closeSettings();
 
     await expect(app.playerStatus).toHaveText("Download cancelled");
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz decoder (~141 MB)");
     await expect(app.downloadModelsButton).toBeEnabled();
     await expectIdle(app);
     await expect(progressBar(app)).toBeHidden();

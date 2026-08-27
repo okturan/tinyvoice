@@ -287,7 +287,7 @@ test.describe("share actions", () => {
 // ── Round trips back into Decode ────────────────────────────────────
 
 test.describe("round trips into decode", () => {
-  test("Copy URL → navigate → Decode shows the same packet and plays without a new download", async ({ app, models }) => {
+  test("Copy URL → navigate → Decode shows the same packet and Play fetches only the decoder", async ({ app, models }) => {
     await readyToRecord(app);
     await app.record(700);
     const packed = await packetFromCopyHex(app);
@@ -303,8 +303,7 @@ test.describe("round trips into decode", () => {
 
     await app.playButton.click();
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 10_000 });
-    // Models are already in IndexedDB from the record, so Play fetches nothing.
-    expect(models.requests.length).toBe(before);
+    expect(models.requests.slice(before)).toEqual(["decoder_12_5hz.onnx"]);
   });
 
   test("Download PNG → upload on Decode decodes to the same packet", async ({ app }) => {
@@ -416,25 +415,12 @@ test.describe("preview decoder override", () => {
     // 12.5hz duration.
     expect(decoderRun.dims.tokens).toEqual([1, tokens]);
 
-    // NOTE: the override goes straight through the codec service, and the
-    // CodecContext (which Settings reads) only counts a quality as loaded
-    // once its full encoder + compressor + decoder set is. So Settings still
-    // reports 12.5hz alone although a 50hz decoder is now resident and cached.
-    // Current behaviour, not an endorsement — whether a lone decoder should
-    // count is an open product question (see the next test).
     await app.openSettings("Models");
-    await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
+    await expect(app.settingsCodecStatus).toHaveText("50hz loaded");
     await app.closeSettings();
   });
 
-  test("after a 50hz preview override, Decode still asks for the 50hz models (current behaviour)", async ({ app }) => {
-    // NOTE: the 50hz preview loads decoder_50hz.onnx through the codec
-    // service, but DecodePlayer gates Play on CodecContext.isQualityLoaded,
-    // i.e. the full 50hz set (encoder + compressor + decoder). The Decode tab
-    // therefore offers a download even though the one model playback needs is
-    // already resident — and taking it also pulls the compressor and, on a
-    // fresh device, the encoder. Whether Play should require the full set is
-    // a product decision; this test pins what happens today, not what should.
+  test("after a 50hz preview override, Decode does not ask for the 50hz decoder", async ({ app }) => {
     await readyToRecord(app);
     await app.record(700);
     await app.decoderButton("50hz").click();
@@ -443,7 +429,23 @@ test.describe("preview decoder override", () => {
 
     await app.openTab("decode");
     await app.submitHex(toHex(packetSeconds("50hz", 1, 5)));
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveCount(0);
+  });
+
+  test("previewing a recording whose decoder is absent offers a decoder download and plays after it", async ({ app, models }) => {
+    await readyToRecord(app);
+    await app.record(700);
+    const decoderButton = resultRoot(app).getByRole("button", {
+      name: "Download 12.5hz decoder (~141 MB)",
+    });
+    await expect(decoderButton).toBeVisible();
+    expect(models.requests).not.toContain("decoder_12_5hz.onnx");
+
+    await decoderButton.click();
+    await expect(app.previewButton).toHaveText("Playing...", { timeout: 15_000 });
+    await expect(decoderButton).toHaveCount(0);
+    expect(models.requests).toContain("decoder_12_5hz.onnx");
+    expect((await app.ortState()).runs.map((r) => r.model)).toContain("decoder_12_5hz.onnx");
   });
 
   test("a new recording resets the override to Auto and clears the copied states", async ({ app }) => {

@@ -15,6 +15,7 @@ export function RecordFlowChrome({ flow }: { flow: RecordFlow }) {
         open={flow.downloadOpen}
         onOpenChange={flow.setDownloadOpen}
         defaultQualities={[flow.quality]}
+        intent="record"
       />
     </>
   );

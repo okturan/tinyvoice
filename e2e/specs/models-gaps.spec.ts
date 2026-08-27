@@ -27,6 +27,10 @@ function sheetButton(app: QrApp, name: string): Locator {
   return app.settingsSheet.getByRole("button", { name, exact: true });
 }
 
+function statusBehindDialog(app: QrApp): Locator {
+  return app.page.locator('[data-slot="sheet-content"] span.font-mono').first();
+}
+
 /** The status dot to the left of the Settings › Models status text. */
 function codecDot(app: QrApp): Locator {
   return app.settingsCodecStatus.locator("xpath=preceding-sibling::div[1]");
@@ -123,19 +127,16 @@ async function clearCacheMidDownload(app: QrApp): Promise<void> {
   await expect(codecDot(app)).toHaveClass(/--surface2/);
 }
 
-/**
- * Cache a 12.5hz set, reload, and delete decoder_12_5hz.onnx from the
- * inventory so the record card offers "Load cached models" yet still has one
- * file to fetch — the only way to hold that path open on the network.
- */
-async function cachedSetMissingDecoder(app: QrApp): Promise<void> {
+/** Download 12.5hz through the record card, then reload so it is only cached. */
+async function cachedRecordSet(app: QrApp): Promise<void> {
   await app.goto();
-  await app.loadModelsViaSettings(["12_5hz"]);
-  await app.goto();
-  await app.openSettings("Models");
-  await fileRow(app, "decoder_12_5hz.onnx").getByRole("button", { name: "Delete decoder_12_5hz.onnx" }).click();
-  await expect(fileRow(app, "decoder_12_5hz.onnx").getByText("not cached", { exact: true })).toBeVisible();
-  await app.closeSettings();
+  await app.codecButton.click();
+  await expect(app.downloadDialog).toBeVisible();
+  await app.startDialogDownload(["12_5hz"]);
+  await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
+  await expect(loadedLine(app)).toHaveText("12.5hz loaded");
+  await app.page.reload();
+  await expect(app.tab("record")).toBeVisible();
   await expect(app.codecButton).toHaveText("Load cached models");
   await expect(app.codecStatus).toHaveText("Cached models available");
 }
@@ -167,16 +168,6 @@ async function cancelAndReclick(app: QrApp): Promise<string> {
 
 test.describe("clearing the cache during a download", () => {
   test("Yes, delete models aborts the running download and nothing gets loaded afterwards", async ({ app, models, page }) => {
-    // BUG: CodecContext.clearModelCache never aborts the in-flight
-    // AbortController (it only wipes IndexedDB, calls codec.reset() and resets
-    // the React state), so the three fetches keep streaming. codec-service's
-    // loadModelSet already holds the session promises, so once they land the
-    // orphaned loadModels resolves and runs its success branch: state "ready",
-    // statusText "12.5hz loaded", loadedQualities [12.5hz], and model-loader's
-    // setCache has re-populated the store the user just deleted.
-    // (CodecContext.tsx clearModelCacheFn / loadModels success branch;
-    // codec-service.ts loadModelSet; model-loader.ts loadModel → setCache.)
-    test.fail();
     const aborted = trackAbortedModelRequests(page);
     await app.goto();
     await startHungDownloadViaSettings(app, models);
@@ -206,46 +197,23 @@ test.describe("clearing the cache during a download", () => {
     await expect(app.settingsSheet.getByText("not cached", { exact: true })).toHaveCount(7);
   });
 
-  test("(current behaviour) the download carries on as an orphan, blocks every load control, then reports itself loaded", async ({ app, models, page }) => {
-    const aborted = trackAbortedModelRequests(page);
+  test("after the cache is cleared mid-download, a new download can start", async ({ app, models }) => {
     await app.goto();
     await startHungDownloadViaSettings(app, models);
     await clearCacheMidDownload(app);
-    // Nothing was aborted: the three fetches are still parked.
-    expect(models.hungCount).toBe(3);
-    expect(aborted).toEqual([]);
+    models.reset();
 
-    // While the orphan runs, a fresh download request is a silent no-op:
-    // loadModels sees the stale AbortController and returns false.
+    await expect(app.settingsCodecStatus).toHaveText(/^(Downloaded model cache cleared|Not loaded)$/);
+    await expect(app.settingsCodecButton).toHaveText("Choose models");
+    await expect(totalCached(app)).toHaveText("Total cached: ~0 MB");
+
     await app.settingsCodecButton.click();
     await expect(app.downloadDialog).toBeVisible();
-    await expect(rowButton(app, "12_5hz")).toHaveText("Download (~812 MB)");
-    await rowButton(app, "12_5hz").click();
-    await expect(app.downloadDialog).toBeVisible();
-    await expect(rowButton(app, "12_5hz")).toBeEnabled();
-    await expect(footerButton(app, "Close")).toBeVisible();
-    await expect(app.downloadDialog.getByRole("progressbar")).toHaveCount(0);
-    expect(models.requests.length).toBe(3);
-    await app.page.keyboard.press("Escape");
-    await expect(app.downloadDialog).toBeHidden();
-    await expect(app.settingsCodecStatus).toHaveText("Downloaded model cache cleared");
-
-    // The orphan lands and overwrites the cleared state.
-    models.release();
-    await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded", { timeout: 15_000 });
+    await app.startDialogDownload(["12_5hz"]);
+    await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
+    await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
     await expect(app.settingsCodecButton).toHaveText("Change models");
-    await expect(codecDot(app)).toHaveClass(/--green/);
     expect((await app.ortState()).sessions.sort()).toEqual(fullSet("12_5hz"));
-    expect(aborted).toEqual([]);
-
-    await app.closeSettings();
-    await expect(loadedLine(app)).toHaveText("12.5hz loaded");
-    await expect(app.codecButton).toHaveText("Enable microphone");
-
-    // The store the user deleted has been filled back up by the orphan.
-    await app.openSettings("Models");
-    await expect(totalCached(app)).toHaveText("Total cached: ~812 MB");
-    await expect(app.settingsSheet.getByText("cached", { exact: true })).toHaveCount(3);
   });
 });
 
@@ -267,13 +235,6 @@ test.describe("cancelling while sessions initialise", () => {
   }
 
   test("Cancel during InferenceSession.create leaves nothing loaded", async ({ app }) => {
-    // BUG: codec-service.createSession checks signal.aborted only before
-    // calling InferenceSession.create, and CodecContext.loadModels' success
-    // branch does not look at the signal either. Cancelling while the three
-    // creates are in flight therefore shows "Cancelled" for ~2 s and then
-    // flips to "12.5hz loaded" / "Change models" as if nothing happened.
-    // (codec-service.ts createSession; CodecContext.tsx loadModels + abortLoading.)
-    test.fail();
     await cancelDuringInit(app);
 
     // Settle: the stub always finishes its creates, so wait for all three.
@@ -288,13 +249,15 @@ test.describe("cancelling while sessions initialise", () => {
     await expect(app.holdButton).toBeDisabled();
   });
 
-  test("(current behaviour) the creates finish and the cancelled load reports itself loaded", async ({ app }) => {
+  test("after Cancel during create, a retry from the dialog loads 12.5hz", async ({ app }) => {
     await cancelDuringInit(app);
-    await expect.poll(() => sessionCount(app), { timeout: 10_000 }).toBe(3);
-
+    await app.setOrt({ createDelayMs: 0 });
+    await app.settingsCodecButton.click();
+    await expect(app.downloadDialog).toBeVisible();
+    await app.startDialogDownload(["12_5hz"]);
+    await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
     await expect(app.settingsCodecStatus).toHaveText("12.5hz loaded");
     await expect(app.settingsCodecButton).toHaveText("Change models");
-    await expect(codecDot(app)).toHaveClass(/--green/);
     await app.closeSettings();
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(app.codecButton).toHaveText("Enable microphone");
@@ -305,13 +268,6 @@ test.describe("a protobuf error while another quality is cached", () => {
   test.use({ strictPageErrors: false });
 
   test("only the file ORT rejected is dropped; the cached 50hz set survives", async ({ app, models, pageErrors }) => {
-    // BUG: CodecContext.loadModels' catch runs clearCache() — the whole
-    // IndexedDB store — whenever the error message contains "protobuf",
-    // instead of delCache(offending file). A healthy, fully cached 50hz set
-    // (and the shared encoder) is thrown away because the 12.5hz compressor
-    // failed to parse. (CodecContext.tsx loadModels catch; model-cache.ts
-    // clearModelCache vs delCache.)
-    test.fail();
     await app.goto();
     await app.loadModelsViaSettings(["50hz"]);
     await app.goto();
@@ -320,14 +276,14 @@ test.describe("a protobuf error while another quality is cached", () => {
     await expect(totalCached(app)).toHaveText("Total cached: ~800 MB");
 
     await app.setOrt({ failCreate: "compressor_12_5hz", failMessage: "protobuf parsing failed" });
-    // Park the decoder so the compressor's failure is the last thing reported.
     models.set("decoder_12_5hz.onnx", { hang: true });
     await app.settingsCodecButton.click();
     await expect(app.downloadDialog).toBeVisible();
     await expect(encoderRow(app).getByText("cached", { exact: true })).toBeVisible();
     await expect(rowButton(app, "12_5hz")).toHaveText("Download (~217 MB)");
     await app.startDialogDownload(["12_5hz"]);
-    await expect.poll(() => pageErrors, { timeout: 15_000 }).toContainEqual(expect.stringContaining("protobuf parsing failed"));
+    await expect(statusBehindDialog(app)).toHaveText("Error");
+    expect(pageErrors).toEqual([]);
     // The encoder came from the cache; only the 12.5hz pair hit the network.
     expect(models.requests.slice(3).sort()).toEqual(pairFor("12_5hz").sort());
     await app.page.keyboard.press("Escape");
@@ -356,74 +312,45 @@ test.describe("a protobuf error while another quality is cached", () => {
 });
 
 test.describe("re-clicking a load control in the same task as Cancel", () => {
-  test("Load cached models right after Cancel download starts a new load", async ({ app, models }) => {
-    // BUG: CodecContext.abortLoading sets state "idle" synchronously (the
-    // card re-arms "Load cached models" on the next microtask) but
-    // abortControllerRef is only cleared in loadModels' finally, several
-    // microtasks later once the aborted promise chain has unwound. A click
-    // in that window hits `if (abortControllerRef.current) return false`,
-    // which useRecordFlow.handleLoadModels reports as "Download cancelled" —
-    // the user's second click is swallowed. (CodecContext.tsx abortLoading /
-    // loadModels; useRecordFlow.ts handleLoadModels.)
-    test.fail();
-    await cachedSetMissingDecoder(app);
-    models.set("*", { hang: true });
+  test("Load cached models right after Cancel download starts a new load", async ({ app }) => {
+    await cachedRecordSet(app);
+    await app.setOrt({ createDelayMs: 2500 });
     await app.codecButton.click();
     await expect(app.codecButton).toHaveText("Loading models...");
     await expect(app.codecCancelButton).toBeVisible();
-    await expect.poll(() => models.hungCount).toBe(1);
-    const before = models.requests.length;
 
     expect(await cancelAndReclick(app)).toBe("Load cached models");
 
-    // The second click is a real load: the decoder is fetched again.
     await expect(app.codecButton).toHaveText("Loading models...");
     await expect(app.codecCancelButton).toBeVisible();
-    await expect.poll(() => models.requests.slice(before)).toEqual(["decoder_12_5hz.onnx"]);
-    expect(models.hungCount).toBe(2);
-
-    models.release();
     await expect(app.holdButton).toBeEnabled({ timeout: 15_000 });
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(app.codecStatus).toHaveCount(0);
   });
 
-  test("(current behaviour) the second click is reported as Download cancelled; a later click works", async ({ app, models }) => {
-    await cachedSetMissingDecoder(app);
-    models.set("*", { hang: true });
+  test("a later click after Cancel loads the cached record set", async ({ app }) => {
+    await cachedRecordSet(app);
+    await app.setOrt({ createDelayMs: 2500 });
     await app.codecButton.click();
     await expect(app.codecButton).toHaveText("Loading models...");
-    await expect.poll(() => models.hungCount).toBe(1);
-    const before = models.requests.length;
-
-    expect(await cancelAndReclick(app)).toBe("Load cached models");
-
-    await expect(app.codecStatus).toHaveText("Download cancelled");
+    await app.codecCancelButton.click();
     await expect(app.codecButton).toHaveText("Load cached models");
     await expect(app.codecButton).toBeEnabled();
-    await expect(app.codecCancelButton).toBeHidden();
-    await expect(app.codecCard.getByRole("progressbar")).toHaveCount(0);
-    expect(models.requests.slice(before)).toEqual([]);
-    expect(models.hungCount).toBe(1);
     await expect(app.holdButton).toBeDisabled();
 
-    // One task later the controller is gone and the same button loads.
+    await app.setOrt({ createDelayMs: 0 });
     await app.codecButton.click();
-    await expect(app.codecButton).toHaveText("Loading models...");
-    await expect.poll(() => models.requests.slice(before)).toEqual(["decoder_12_5hz.onnx"]);
-    models.release();
     await expect(app.holdButton).toBeEnabled({ timeout: 15_000 });
     await expect(loadedLine(app)).toHaveText("12.5hz loaded");
     await expect(app.codecStatus).toHaveCount(0);
-    expect((await app.ortState()).sessions.sort()).toEqual(fullSet("12_5hz"));
+    expect(new Set((await app.ortState()).sessions)).toEqual(
+      new Set(["encoder.onnx", "compressor_12_5hz.onnx"]),
+    );
   });
 });
 
-test.describe("a failed encoder download leaves its siblings streaming", () => {
-  // The rejection escapes ModelDownloadDialog.handleDownload as an uncaught error.
-  test.use({ strictPageErrors: false });
-
-  test("the pair is neither aborted nor refetched, and a plain retry ends on 12.5hz loaded", async ({ app, models, page, pageErrors }) => {
+test.describe("a failed encoder download aborts its siblings", () => {
+  test("the pair is aborted, and a retry fetches the missing files", async ({ app, models, page, pageErrors }) => {
     const aborted = trackAbortedModelRequests(page);
     await app.goto();
     models.set("encoder.onnx", { status: 500 });
@@ -432,21 +359,14 @@ test.describe("a failed encoder download leaves its siblings streaming", () => {
     await openDialogViaSettings(app);
     await app.startDialogDownload(["12_5hz"]);
 
-    await expect.poll(() => pageErrors).toContainEqual(expect.stringContaining("Failed to download encoder.onnx: HTTP 500"));
+    await expect(statusBehindDialog(app)).toHaveText("Error");
+    expect(pageErrors).toEqual([]);
     expect([...models.requests].sort()).toEqual(fullSet("12_5hz"));
-    // The dialog re-arms while the pair is still on its way.
     await expect(footerButton(app, "Close")).toBeVisible();
     await expect(rowButton(app, "12_5hz")).toBeEnabled();
+    await expect.poll(() => aborted.filter((name) => name !== "encoder.onnx").sort()).toEqual(pairFor("12_5hz").sort());
+    expect((await app.ortState()).sessions).toEqual([]);
 
-    // Nobody releases anything: the pair lands on its own because the
-    // failure never aborted the shared signal. (The 500'd encoder request is
-    // itself logged as ERR_ABORTED — its unread body is cancelled — so only
-    // the siblings count here.)
-    await expect.poll(async () => (await app.ortState()).sessions.sort(), { timeout: 10_000 }).toEqual(pairFor("12_5hz").sort());
-    expect(aborted.filter((name) => name !== "encoder.onnx")).toEqual([]);
-    expect(models.requests.length).toBe(3);
-
-    // Retry from the same dialog: only the encoder goes back to the network.
     models.reset();
     await rowButton(app, "12_5hz").click();
     await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
@@ -454,8 +374,7 @@ test.describe("a failed encoder download leaves its siblings streaming", () => {
     await expect(codecDot(app)).toHaveClass(/--green/);
     await expect(app.settingsCodecButton).toHaveText("Change models");
     expect(models.requestsFor("encoder.onnx")).toBe(2);
-    expect(models.requests.length).toBe(4);
-    expect(aborted.filter((name) => name !== "encoder.onnx")).toEqual([]);
+    expect(models.requests.length).toBe(6);
     expect((await app.ortState()).sessions.sort()).toEqual(fullSet("12_5hz"));
 
     await app.closeSettings();

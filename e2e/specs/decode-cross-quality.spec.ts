@@ -7,6 +7,7 @@ import { test, expect } from "../support/test";
 import {
   ALL_QUALITIES,
   LABEL,
+  downloadDecoderLabel,
   initialStatus,
   legacyPacket,
   packetSeconds,
@@ -18,8 +19,12 @@ import {
 
 const OTHER: Record<Quality, Quality> = { "12_5hz": "50hz", "25hz": "12_5hz", "50hz": "25hz" };
 
-function modelsFor(q: Quality): string[] {
+function pairFor(q: Quality): string[] {
   return [`compressor_${q}.onnx`, `decoder_${q}.onnx`];
+}
+
+function decoderFor(q: Quality): string[] {
+  return [`decoder_${q}.onnx`];
 }
 
 test.describe("nothing loaded", () => {
@@ -29,7 +34,7 @@ test.describe("nothing loaded", () => {
       await app.goto({ v: toBase64(bytes) });
 
       await expect(app.playerStatus).toHaveText(initialStatus(bytes, q));
-      await expect(app.downloadModelsButton).toHaveText(`Download ${LABEL[q]} models`);
+      await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel(q));
       await expect(app.downloadModelsButton).toBeEnabled();
       await expect(app.playButton).toBeEnabled();
       await expect(app.playButton).toHaveAttribute("aria-label", "Play voice packet");
@@ -43,11 +48,7 @@ test.describe("nothing loaded", () => {
 
       await app.playButton.click();
       await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
-      // Current behaviour: Play routes through CodecContext.loadModels, which
-      // always fetches the shared encoder + compressor as well, although only
-      // the decoder runs. That is ~800 MB in production for a recipient who
-      // just wants to listen (see the "decoder-only playback" finding).
-      expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor(q)].sort());
+      expect([...models.requests].sort()).toEqual(decoderFor(q));
       await expect(app.playerStatus).toHaveText(`2.0s decoded from ${bytes.length} bytes`);
       await expect(app.playerStatus).toHaveClass(/--green/);
       await expect(app.downloadModelsButton).toBeHidden();
@@ -61,21 +62,20 @@ test.describe("nothing loaded", () => {
 test.describe("another quality is loaded", () => {
   for (const q of ALL_QUALITIES) {
     const loaded = OTHER[q];
-    test(`${LABEL[loaded]} loaded, ${LABEL[q]} packet arrives → still needs ${LABEL[q]}; Play fetches only the ${LABEL[q]} pair`, async ({ app, models }) => {
+    test(`${LABEL[loaded]} loaded, ${LABEL[q]} packet arrives → still needs ${LABEL[q]}; Play fetches only the ${LABEL[q]} decoder`, async ({ app, models }) => {
       const bytes = packetSeconds(q, 1.6);
       await app.goto({ v: toBase64(bytes) });
       await app.loadModelsViaSettings([loaded]);
-      expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor(loaded)].sort());
+      expect([...models.requests].sort()).toEqual(["encoder.onnx", ...pairFor(loaded)].sort());
 
       // The player does not pretend the other decoder will do.
-      await expect(app.downloadModelsButton).toHaveText(`Download ${LABEL[q]} models`);
+      await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel(q));
       await expect(app.playButton).toBeEnabled();
       await expect(app.playerStatus).toHaveText(initialStatus(bytes, q));
 
       await app.playButton.click();
       await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
-      // The shared encoder is already in memory — only the new pair is fetched.
-      expect(models.requests.slice(3).sort()).toEqual(modelsFor(q).sort());
+      expect(models.requests.slice(3).sort()).toEqual(decoderFor(q));
       await expect(app.playerStatus).toHaveText(`1.6s decoded from ${bytes.length} bytes`);
     });
   }
@@ -85,7 +85,7 @@ test.describe("another quality is loaded", () => {
     const bytes = packetSeconds("50hz", 2);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("50hz"));
 
     await app.decoderButton("12.5hz").click();
     await expect(app.playerStatus).toHaveText("Decoder set to 12.5hz");
@@ -104,18 +104,18 @@ test.describe("another quality is loaded", () => {
     // Back to Auto: the packet's own quality is still missing.
     await app.decoderButton("Auto (50hz)").click();
     await expect(app.playerStatus).toHaveText("Decoder set to Auto (50hz)");
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("50hz"));
     await expect(app.playButton).toHaveAttribute("aria-label", "Play voice packet");
   });
 
-  test("overriding to an unloaded decoder retargets the download prompt and Play fetches that pair", async ({ app, models }) => {
+  test("overriding to an unloaded decoder retargets the download prompt and Play fetches that decoder", async ({ app, models }) => {
     const bytes = packetSeconds("12_5hz", 2);
     await app.goto({ v: toBase64(bytes) });
     await app.loadModelsViaSettings(["12_5hz"]);
     await expect(app.downloadModelsButton).toBeHidden();
 
     await app.decoderButton("25hz").click();
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("25hz"));
     await expect(app.playerStatus).toHaveText("Decoder set to 25hz");
 
     models.set("*", { delayMs: 1500 });
@@ -123,7 +123,7 @@ test.describe("another quality is loaded", () => {
     await expect(app.playButton).toBeDisabled();
     await expect(app.downloadModelsButton).toHaveText("Loading models...");
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
-    expect(models.requests.slice(3).sort()).toEqual(modelsFor("25hz").sort());
+    expect(models.requests.slice(3).sort()).toEqual(decoderFor("25hz"));
     // 25 tokens through the 25 hz decoder = 1 s.
     await expect(app.playerStatus).toHaveText(`1.0s decoded from ${bytes.length} bytes`);
     await expect(app.downloadModelsButton).toBeHidden();
@@ -135,7 +135,7 @@ test.describe("another quality is loaded", () => {
     await app.decoderButton("50hz").click();
     await app.downloadModelsButton.click();
     await expect(app.downloadModelsButton).toBeHidden({ timeout: 15_000 });
-    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor("50hz")].sort());
+    expect([...models.requests].sort()).toEqual(decoderFor("50hz"));
     await expect(app.playButton).toHaveAttribute("aria-label", "Play voice packet");
     const { runs } = await app.ortState();
     expect(runs).toEqual([]);
@@ -148,7 +148,7 @@ test.describe("several qualities loaded", () => {
     await app.goto({ tab: "decode" });
     await app.loadModelsViaSettings(["12_5hz", "25hz"]);
     expect([...models.requests].sort()).toEqual(
-      ["encoder.onnx", ...modelsFor("12_5hz"), ...modelsFor("25hz")].sort(),
+      ["encoder.onnx", ...pairFor("12_5hz"), ...pairFor("25hz")].sort(),
     );
 
     const p25 = packetSeconds("25hz", 1, 1);
@@ -161,7 +161,7 @@ test.describe("several qualities loaded", () => {
     const p50 = packetSeconds("50hz", 1, 2);
     await app.submitHex(toHex(p50));
     await expect(app.playerStatus).toHaveText(initialStatus(p50, "50hz"));
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("50hz"));
     expect(models.requests.length).toBe(5);
   });
 });
@@ -173,11 +173,11 @@ test.describe("legacy packets (no magic byte)", () => {
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "50hz", true));
     await expect(app.playerStatus).toContainText("(legacy fallback)");
     expect(await app.decoderLabels()).toEqual(["Auto (50hz, legacy fallback)", "12.5hz", "25hz"]);
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("50hz"));
 
     await app.playButton.click();
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
-    expect([...models.requests].sort()).toEqual(["encoder.onnx", ...modelsFor("50hz")].sort());
+    expect([...models.requests].sort()).toEqual(decoderFor("50hz"));
     await expect(app.playerStatus).toHaveText(`1.0s decoded from ${bytes.length} bytes`);
 
     await app.decoderButton("12.5hz").click();
@@ -209,7 +209,7 @@ test.describe("while models are downloading", () => {
 
     models.release();
     await expect(app.playButton).toBeEnabled({ timeout: 15_000 });
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("12_5hz"));
     await expect(app.playerCard.getByRole("progressbar")).toBeHidden();
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "12_5hz"));
   });
@@ -222,7 +222,7 @@ test.describe("while models are downloading", () => {
     await app.playButton.click();
     await expect(app.playButton).toBeDisabled();
     await expect(app.downloadModelsButton).toHaveText("Loading models...");
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(1);
 
     await app.openSettings("Models");
     await app.settingsSheet.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -231,13 +231,13 @@ test.describe("while models are downloading", () => {
     await expect(app.playerStatus).toHaveText("Download cancelled");
     await expect(app.playButton).toBeEnabled();
     await expect(app.playButton).toHaveAttribute("aria-label", "Play voice packet");
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("25hz"));
 
     // A second attempt downloads again from scratch.
     models.reset();
     await app.playButton.click();
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
-    expect(models.requests.length).toBe(6);
+    expect(models.requests.length).toBe(2);
   });
 
   test("deleting downloaded models while a packet is loaded brings the prompt back", async ({ app, models }) => {
@@ -250,12 +250,12 @@ test.describe("while models are downloading", () => {
     await expect(app.downloadModelsButton).toBeHidden();
 
     await app.deleteModelsViaSettings();
-    await expect(app.downloadModelsButton).toHaveText("Download 12.5hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("12_5hz"));
 
     // The decoded buffer is still cached in the player, so Play just replays it.
     await app.playButton.click();
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback");
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(1);
   });
 });
 
@@ -274,7 +274,7 @@ test.describe("decoder override across packets", () => {
     await app.submitHex(toHex(next));
     await expect(app.playerStatus).toHaveText(initialStatus(next, "50hz"));
     expect(await app.selectedDecoderLabels()).toEqual(["Auto (50hz)"]);
-    await expect(app.downloadModelsButton).toHaveText("Download 50hz models");
+    await expect(app.downloadModelsButton).toHaveText(downloadDecoderLabel("50hz"));
   });
 
   test("a new packet whose quality equals the stale override still highlights a decoder", async ({ app }) => {

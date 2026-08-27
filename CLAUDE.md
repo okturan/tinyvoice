@@ -78,7 +78,7 @@ e2e/
 - **React + Vite + TypeScript** — ported from vanilla HTML/JS/CSS
 - **Unified codec singleton** — `codec-service.ts` shared by PTT (via CodecContext) and QR pages. Promise-based session caching prevents duplicate downloads.
 - **Quality enum** — `types/codec.ts` Quality enum ("50hz", "25hz", "12_5hz") used everywhere. Matches ONNX filenames directly.
-- **Split encoder model** — shared WavLM encoder.onnx (595MB) + per-quality compressor + decoder
+- **Split encoder model** — shared WavLM encoder.onnx (595MB) + per-quality compressor + decoder. `loadModels(quality, intent)` fetches only the artifacts that intent needs: record = encoder + compressor, play = decoder, both = the full set. `canRecord` / `canPlay` track those halves separately. `isQualityLoaded` still requires both.
 - **iSTFT in TypeScript** — Cooley-Tukey radix-2 iFFT + overlap-add. Math-critical, do not modify.
 - **Magic byte wire format** — 0x01=50hz, 0x02=25hz, 0x03=12.5hz
 - **One-hour room history** — the Room DO persists every relayed packet in SQLite (`message_history`) and replays the backlog to each socket that sends `hello {history:true}`, once per socket. Retention is 1h / 1000 messages, pruned on write and by an alarm set to the oldest entry's expiry. History frames use a distinct marker: `[0xFD][sentAt f64 BE][nameLen][name][packet]`. A room's quality lock now survives an empty room while history remains, so replayed packets stay decodable.

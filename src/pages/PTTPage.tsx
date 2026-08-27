@@ -170,8 +170,10 @@ export function PTTPage() {
     if (roomModelAttemptRef.current === attemptKey) return;
     roomModelAttemptRef.current = attemptKey;
     addLog(`Downloading ${qualityLabel(roomQuality)} models for this room...`, "info");
-    codec.loadModels(roomQuality).catch((e: unknown) => {
-      addLog("Model load: " + (e instanceof Error ? e.message : String(e)), "warn");
+    void codec.loadModels(roomQuality, "both").then((result) => {
+      if (!result.ok && result.reason === "error") {
+        addLog("Model load: " + (result.message ?? "Error"), "warn");
+      }
     });
   }, [room.isConnected, roomQuality, codec, addLog]);
 
@@ -488,7 +490,9 @@ export function PTTPage() {
               title={locked ? "Room locks quality" : loaded ? `Encode with ${opt.label}` : `Download & use ${opt.label}`}
               onClick={() => {
                 if (loaded) codec.setActiveQuality(opt.value);
-                else codec.loadModels(opt.value).then(ok => { if (ok) codec.setActiveQuality(opt.value); }).catch(() => {});
+                else void codec.loadModels(opt.value, "both").then((result) => {
+                  if (result.ok) codec.setActiveQuality(opt.value);
+                });
               }}
               className={`flex-1 py-1 rounded-md text-[0.65rem] font-mono transition-colors ${
                 active
@@ -510,6 +514,9 @@ export function PTTPage() {
         <div className={`w-1.5 h-1.5 rounded-full ${codec.modelsLoaded ? "bg-[var(--green)]" : "bg-[var(--surface2)]"}`} />
         <span className="text-[0.7rem] text-[var(--subtext)] font-mono">{codec.statusText}</span>
       </div>
+      {codec.errorText && (
+        <p className="mb-2 text-[0.65rem] text-[var(--red)]">{codec.errorText}</p>
+      )}
       {codec.state === "loading" && <Progress value={codec.progress} className="mb-2 h-1.5" />}
       <button onClick={() => setDownloadOpen(true)} disabled={codec.state === "loading"}
         className="w-full py-1.5 rounded-md text-[0.7rem] font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed mb-1">
@@ -911,6 +918,7 @@ export function PTTPage() {
       <ModelDownloadDialog
         open={downloadOpen}
         onOpenChange={setDownloadOpen}
+        intent="both"
       />
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
     </>

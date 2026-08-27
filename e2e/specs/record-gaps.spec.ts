@@ -14,8 +14,8 @@ import { ALL_QUALITIES, LABEL, type Quality } from "../support/packets";
 const TOO_SHORT = "Too short — hold longer";
 const NOT_CACHED = "↓";
 
-function modelsFor(q: Quality): string[] {
-  return [`compressor_${q}.onnx`, `decoder_${q}.onnx`];
+function recordFiles(q: Quality): string[] {
+  return [`compressor_${q}.onnx`];
 }
 
 /** The <label> wrapping a quality radio (the radio itself is sr-only, so clicks go here). */
@@ -328,7 +328,7 @@ test.describe("the record tab's download dialog", () => {
     await app.codecButton.click();
     await expect(app.downloadDialog).toBeVisible();
     await app.startDialogDownload(["12_5hz"]);
-    await expect.poll(() => models.hungCount).toBe(3);
+    await expect.poll(() => models.hungCount).toBe(2);
     const cancel = footerButton(app, "Cancel download");
     await expect(cancel).toBeVisible();
     await expect(app.downloadDialog.getByRole("progressbar")).toBeVisible();
@@ -340,7 +340,7 @@ test.describe("the record tab's download dialog", () => {
     await expect(footerButton(app, "Close")).toBeVisible();
     await expect(app.downloadDialog.getByRole("progressbar")).toHaveCount(0);
     const row = app.dialogRow("12_5hz").getByRole("button");
-    await expect(row).toHaveText("Download (~812 MB)");
+    await expect(row).toHaveText("Download (~671 MB)");
     await expect(row).toBeEnabled();
     await expect(app.dialogRow("12_5hz").getByText("cached", { exact: true })).toHaveCount(0);
 
@@ -353,14 +353,14 @@ test.describe("the record tab's download dialog", () => {
     await expect(app.codecStatus).toHaveCount(0);
     await expect(app.holdButton).toBeDisabled();
     await expect(qualityOption(app, "12_5hz")).toContainText(NOT_CACHED);
-    expect(models.requests.length).toBe(3);
+    expect(models.requests.length).toBe(2);
     expect((await app.ortState()).sessions).toEqual([]);
 
     // The same dialog can start over from scratch.
     models.reset();
     await downloadFromCard(app, "12_5hz");
     await expect(app.codecButton).toHaveText("Enable microphone");
-    expect(models.requests.length).toBe(6);
+    expect(models.requests.length).toBe(4);
   });
 
   test("multi-select with nothing checked offers a disabled 'Select a quality'", async ({ app, models }) => {
@@ -373,7 +373,7 @@ test.describe("the record tab's download dialog", () => {
 
     const go = await app.selectMultiple([]);
     await expect(app.dialogRow("50hz").getByRole("checkbox")).toBeChecked();
-    await expect(go).toHaveText("Download selected (~205 MB)");
+    await expect(go).toHaveText("Download selected (~70 MB)");
 
     await app.dialogRow("50hz").getByRole("checkbox").uncheck();
     for (const q of ALL_QUALITIES) await expect(app.dialogRow(q).getByRole("checkbox")).not.toBeChecked();
@@ -384,7 +384,7 @@ test.describe("the record tab's download dialog", () => {
     await footerButton(app, "Close").click();
     await expect(app.downloadDialog).toBeHidden();
     await expect(app.codecButton).toHaveText("Choose models");
-    expect(models.requests.length).toBe(5);
+    expect(models.requests.length).toBe(3);
   });
 
   test("checking both cached qualities offers 'Load selected from cache', which loads them without the network", async ({ app, models }) => {
@@ -399,15 +399,15 @@ test.describe("the record tab's download dialog", () => {
     // Badge and price column both read "cached" for the two cached pairs.
     await expect(app.dialogRow("12_5hz").getByText("cached", { exact: true })).toHaveCount(2);
     await expect(app.dialogRow("25hz").getByText("cached", { exact: true })).toHaveCount(2);
-    await expect(app.dialogRow("50hz")).toContainText("~205 MB");
+    await expect(app.dialogRow("50hz")).toContainText("~70 MB");
     await expect(go).toHaveText("Load selected from cache");
     await expect(go).toBeEnabled();
 
     await go.click();
     await expect(app.downloadDialog).toBeHidden({ timeout: 20_000 });
-    expect(models.requests.length).toBe(5);
+    expect(models.requests.length).toBe(3);
     expect((await app.ortState()).sessions.sort()).toEqual(
-      ["encoder.onnx", ...modelsFor("12_5hz"), ...modelsFor("25hz")].sort(),
+      ["encoder.onnx", ...recordFiles("12_5hz"), ...recordFiles("25hz")].sort(),
     );
 
     // 50hz is still picked, so the card keeps asking for it; the two cached qualities are ready.

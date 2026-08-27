@@ -10,8 +10,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { useCodecContext } from "@/contexts/CodecContext";
-import { useModelCache } from "@/hooks/useModelCache";
+import {
+  compressorFile,
+  decoderFile,
+  encoderFile,
+  useCodecContext,
+  type LoadIntent,
+} from "@/contexts/CodecContext";
 import { MODEL_SIZE_ESTIMATES_MB, QUALITY_OPTIONS } from "@/lib/constants";
 import { Quality } from "@/types/codec";
 
@@ -19,22 +24,27 @@ interface ModelDownloadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultQualities?: Quality[];
+  intent?: LoadIntent;
 }
 
-const QUALITY_FILES: Record<Quality, string[]> = {
-  [Quality.Hz12_5]: ["compressor_12_5hz.onnx", "decoder_12_5hz.onnx"],
-  [Quality.Hz25]: ["compressor_25hz.onnx", "decoder_25hz.onnx"],
-  [Quality.Hz50]: ["compressor_50hz.onnx", "decoder_50hz.onnx"],
-};
+function qualityFiles(quality: Quality, intent: LoadIntent): string[] {
+  if (intent === "play") return [decoderFile(quality)];
+  if (intent === "record") return [compressorFile(quality)];
+  return [compressorFile(quality), decoderFile(quality)];
+}
 
 export function ModelDownloadDialog({
   open,
   onOpenChange,
   defaultQualities = [],
+  intent = "both",
 }: ModelDownloadDialogProps) {
   const codec = useCodecContext();
-  const isQualityLoaded = codec.isQualityLoaded;
-  const { cachedKeys, refresh } = useModelCache();
+  const rowReady = (quality: Quality) => {
+    if (intent === "play") return codec.canPlay(quality);
+    if (intent === "record") return codec.canRecord(quality);
+    return codec.isQualityLoaded(quality);
+  };
   const initialQualities = defaultQualities;
   const initialQualitiesKey = initialQualities.join("|");
   const [selected, setSelected] = useState<Quality[]>(initialQualities);
@@ -42,47 +52,45 @@ export function ModelDownloadDialog({
 
   useEffect(() => {
     if (open) {
-      const selectable = initialQualities.filter(
-        (quality) => !isQualityLoaded(quality),
-      );
+      const selectable = initialQualities.filter((quality) => !rowReady(quality));
       setSelected(selectable);
       setMultiSelect(selectable.length > 1);
     }
-  }, [initialQualitiesKey, isQualityLoaded, open]);
+  }, [initialQualitiesKey, open, intent, codec.canPlay, codec.canRecord, codec.isQualityLoaded]);
 
   useEffect(() => {
     if (open) {
-      setSelected((current) =>
-        current.filter((quality) => !isQualityLoaded(quality)),
-      );
+      setSelected((current) => current.filter((quality) => !rowReady(quality)));
     }
-  }, [isQualityLoaded, open]);
+  }, [open, intent, codec.canPlay, codec.canRecord, codec.isQualityLoaded]);
 
-  const encoderCached = cachedKeys.has("encoder.onnx");
+  const includeEncoder = intent !== "play";
+  const encoderCached = codec.cachedFiles.has(encoderFile());
   const loading = codec.state === "loading";
 
   const isQualityCached = (quality: Quality) =>
-    QUALITY_FILES[quality].every((file) => cachedKeys.has(file));
+    qualityFiles(quality, intent).every((file) => codec.cachedFiles.has(file));
 
   const qualityDownloadSize = (quality: Quality) =>
-    QUALITY_FILES[quality].reduce(
-      (sum, file) => sum + (cachedKeys.has(file) ? 0 : MODEL_SIZE_ESTIMATES_MB[file] ?? 0),
+    qualityFiles(quality, intent).reduce(
+      (sum, file) => sum + (codec.cachedFiles.has(file) ? 0 : MODEL_SIZE_ESTIMATES_MB[file] ?? 0),
       0,
     );
 
-  const selectedPending = selected.filter((quality) => !isQualityLoaded(quality));
+  const selectedPending = selected.filter((quality) => !rowReady(quality));
   const selectedSize =
     selectedPending.length === 0
       ? 0
-      : (encoderCached ? 0 : MODEL_SIZE_ESTIMATES_MB["encoder.onnx"] ?? 0) +
+      : (includeEncoder && !encoderCached ? MODEL_SIZE_ESTIMATES_MB[encoderFile()] ?? 0 : 0) +
         selectedPending.reduce((sum, quality) => sum + qualityDownloadSize(quality), 0);
 
   const packageSize = (quality: Quality) => {
-    return (encoderCached ? 0 : MODEL_SIZE_ESTIMATES_MB["encoder.onnx"] ?? 0) + qualityDownloadSize(quality);
+    return (includeEncoder && !encoderCached ? MODEL_SIZE_ESTIMATES_MB[encoderFile()] ?? 0 : 0) +
+      qualityDownloadSize(quality);
   };
 
   const toggleQuality = (quality: Quality) => {
-    if (isQualityLoaded(quality)) return;
+    if (rowReady(quality)) return;
     setSelected((current) =>
       current.includes(quality)
         ? current.filter((item) => item !== quality)
@@ -91,16 +99,22 @@ export function ModelDownloadDialog({
   };
 
   const handleDownload = async (qualities: Quality[]) => {
-    const pending = qualities.filter((quality) => !isQualityLoaded(quality));
+    const pending = qualities.filter((quality) => !rowReady(quality));
     if (pending.length === 0) {
       onOpenChange(false);
       return;
     }
-    const ok = await codec.loadModels(pending);
-    if (ok) {
-      refresh();
+    const result = await codec.loadModels(pending, intent);
+    if (result.ok) {
+      await codec.refreshCache();
       onOpenChange(false);
     }
+  };
+
+  const cacheReadyLabel = (quality: Quality) => {
+    if (intent === "play") return codec.isCachedForPlayback(quality);
+    if (intent === "record") return codec.isCachedForRecording(quality);
+    return isQualityCached(quality) && encoderCached;
   };
 
   return (
@@ -109,39 +123,42 @@ export function ModelDownloadDialog({
         <DialogHeader>
           <DialogTitle className="text-base">Download models</DialogTitle>
           <DialogDescription className="text-[0.75rem] text-[var(--overlay)]">
-            Start with one quality. The shared encoder is included with your first download.
+            {intent === "play"
+              ? "Playback needs only the decoder for the packet quality."
+              : "Start with one quality. The shared encoder is included with your first download."}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="rounded-md bg-[var(--base)] px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-mono text-[0.72rem] text-[var(--text)]">
-                  encoder.onnx
+          {includeEncoder && (
+            <div className="rounded-md bg-[var(--base)] px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-mono text-[0.72rem] text-[var(--text)]">
+                    encoder.onnx
+                  </div>
+                  <div className="text-[0.6rem] text-[var(--overlay)]">
+                    Shared recording model
+                  </div>
                 </div>
-                <div className="text-[0.6rem] text-[var(--overlay)]">
-                  Shared recording model
+                <div className="flex items-center gap-2">
+                  <span className="text-[0.6rem] text-[var(--overlay)]">595 MB</span>
+                  {encoderCached && (
+                    <Badge variant="secondary" className="border-0 bg-[var(--green)]/15 px-1.5 py-0 text-[0.5rem] text-[var(--green)]">
+                      cached
+                    </Badge>
+                  )}
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[0.6rem] text-[var(--overlay)]">595 MB</span>
-                {encoderCached && (
-                  <Badge variant="secondary" className="border-0 bg-[var(--green)]/15 px-1.5 py-0 text-[0.5rem] text-[var(--green)]">
-                    cached
-                  </Badge>
-                )}
               </div>
             </div>
-          </div>
+          )}
 
           {!multiSelect ? (
             <div className="space-y-1.5">
               {QUALITY_OPTIONS.map((option) => {
-                const files = QUALITY_FILES[option.value];
                 const isSuggested = selected.includes(option.value);
-                const isLoaded = isQualityLoaded(option.value);
-                const isCached = files.every((file) => cachedKeys.has(file));
+                const isLoaded = rowReady(option.value);
+                const isCached = isQualityCached(option.value);
 
                 return (
                   <div
@@ -185,7 +202,7 @@ export function ModelDownloadDialog({
                     >
                       {isLoaded
                         ? "Loaded"
-                        : isCached && encoderCached
+                        : cacheReadyLabel(option.value)
                           ? "Load from cache"
                           : `Download (~${packageSize(option.value)} MB)`}
                     </Button>
@@ -204,7 +221,7 @@ export function ModelDownloadDialog({
             <div className="space-y-1.5">
               {QUALITY_OPTIONS.map((option) => {
                 const isSelected = selected.includes(option.value);
-                const isLoaded = isQualityLoaded(option.value);
+                const isLoaded = rowReady(option.value);
                 const isCached = isQualityCached(option.value);
                 const rowSize = packageSize(option.value);
 
@@ -249,7 +266,7 @@ export function ModelDownloadDialog({
                     <span className="font-mono text-[0.6rem] text-[var(--overlay)]">
                       {isLoaded
                         ? "ready"
-                        : isCached && encoderCached
+                        : cacheReadyLabel(option.value)
                           ? "cached"
                           : `~${rowSize} MB`}
                     </span>
@@ -266,6 +283,10 @@ export function ModelDownloadDialog({
                 {codec.statusText}
               </div>
             </div>
+          )}
+
+          {codec.errorText && codec.state === "error" && (
+            <p className="text-[0.7rem] text-[var(--red)]">{codec.errorText}</p>
           )}
         </div>
 

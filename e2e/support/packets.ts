@@ -10,6 +10,11 @@ export const MAGIC: Record<Quality, number> = { "50hz": 0x01, "25hz": 0x02, "12_
 export const RATE: Record<Quality, number> = { "50hz": 50, "25hz": 25, "12_5hz": 12.5 };
 export const LABEL: Record<Quality, string> = { "50hz": "50hz", "25hz": "25hz", "12_5hz": "12.5hz" };
 export const ALL_QUALITIES: Quality[] = ["12_5hz", "25hz", "50hz"];
+export const DECODER_MB: Record<Quality, number> = { "50hz": 135, "25hz": 139, "12_5hz": 141 };
+
+export function downloadDecoderLabel(quality: Quality): string {
+  return `Download ${LABEL[quality]} decoder (~${DECODER_MB[quality]} MB)`;
+}
 
 export function tokensFor(count: number, seed = 0): number[] {
   return Array.from({ length: count }, (_, i) => (i * 131 + seed * 7 + 3) % 65536);

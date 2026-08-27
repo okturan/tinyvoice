@@ -148,7 +148,7 @@ test.describe("default tab", () => {
 
     await expect(app.tab("decode")).toHaveAttribute("aria-selected", "true");
     await expect(app.playerStatus).toHaveText(initialStatus(bytes, "25hz"));
-    await expect(app.downloadModelsButton).toHaveText("Download 25hz models");
+    await expect(app.downloadModelsButton).toHaveText("Download 25hz decoder (~139 MB)");
     await expect(stageHeader(app, bytes, "25hz")).toBeVisible();
     await expect(app.newSourceButton).toBeVisible();
     // Stage swap: the loaded packet takes the whole canvas.

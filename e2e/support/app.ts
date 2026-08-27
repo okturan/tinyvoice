@@ -133,7 +133,9 @@ export class QrApp {
   }
 
   get downloadModelsButton(): Locator {
-    return this.playerCard.getByRole("button", { name: /^(Download .+ models|Loading models\.\.\.)$/ });
+    return this.playerCard.getByRole("button", {
+      name: /^(Download .+ decoder \(~\d+ MB\)|Download .+ models|Loading models\.\.\.)$/,
+    });
   }
 
   /** DecodePlayer's single status <p>. */
@@ -264,11 +266,13 @@ export class QrApp {
   }
 
   get previewButton(): Locator {
-    return this.page.getByRole("button", { name: /^(Preview|Playing\.\.\.|Loading\.\.\.)$/ });
+    return this.qrImage.locator("xpath=..").getByRole("button", {
+      name: /^(Preview|Playing\.\.\.|Loading\.\.\.)$/,
+    }).and(this.page.locator('[data-variant="outline"]'));
   }
 
   get copyUrlButton(): Locator {
-    return this.page.getByRole("button", { name: /^(Copy URL|Copied!)$/ });
+    return this.page.getByRole("button", { name: /^(Copy URL|Copied!|Copy failed)$/ });
   }
 
   get copyHexButton(): Locator {

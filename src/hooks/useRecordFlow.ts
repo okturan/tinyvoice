@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useCodecContext } from "@/contexts/CodecContext";
+import { compressorFile, encoderFile, useCodecContext } from "@/contexts/CodecContext";
 import { codec as codecService } from "@/lib/codec-service";
-import { areCached } from "@/lib/model-cache";
 import { Quality } from "@/types/codec";
 import { QUALITY_OPTIONS, SR } from "@/lib/constants";
 import { getWorkletUrl } from "@/lib/audio/recorder-worklet";
@@ -69,11 +68,17 @@ export function useRecordFlow() {
   const userPickedQualityRef = useRef(false);
   const captureGenerationRef = useRef(0);
   const recordStateRef = useRef<RecordState>("idle");
-  const modelsLoaded = codecContext.isQualityLoaded(quality);
+  const modelsLoaded = codecContext.canRecord(quality);
   const readyToRecord = modelsLoaded && audioReady;
   const loadingModels = !modelsLoaded && codecContext.state === "loading";
-  const displayStatus = loadingModels ? codecContext.statusText : status;
-  const displayStatusType = loadingModels ? "" : statusType;
+  const displayStatus = loadingModels
+    ? codecContext.statusText
+    : codecContext.errorText || status;
+  const displayStatusType = loadingModels
+    ? ""
+    : codecContext.errorText
+      ? "err"
+      : statusType;
   const loadedStatus = `${qualityLabel(quality)} loaded`;
   const showDisplayStatus = Boolean(displayStatus && (!modelsLoaded || displayStatus !== loadedStatus));
 
@@ -161,22 +166,15 @@ export function useRecordFlow() {
       return;
     }
 
-    const keys = [
-      "encoder.onnx",
-      ...QUALITY_OPTIONS.map((option) => `compressor_${option.value}.onnx`),
-    ];
-    areCached(keys).then((results) => {
-      if (autoPickedQualityRef.current || userPickedQualityRef.current) return;
-      const cached = QUALITY_OPTIONS.find(
-        (option) => results["encoder.onnx"] && results[`compressor_${option.value}.onnx`],
-      );
-      if (cached && cached.value !== quality) {
-        autoPickedQualityRef.current = true;
-        setQuality(cached.value);
-        setStatus(`${qualityLabel(cached.value)} loaded`);
-      }
-    });
-  }, [codecContext.loadedQualities, quality]);
+    const cached = QUALITY_OPTIONS.find((option) =>
+      codecContext.isCachedForRecording(option.value),
+    );
+    if (cached && cached.value !== quality) {
+      autoPickedQualityRef.current = true;
+      setQuality(cached.value);
+      setStatus(`${qualityLabel(cached.value)} loaded`);
+    }
+  }, [codecContext.loadedQualities, codecContext.cachedFiles, codecContext.isCachedForRecording, quality]);
 
   // Check which models are cached when quality changes
   useEffect(() => {
@@ -185,23 +183,19 @@ export function useRecordFlow() {
       setStatus(loadedStatus);
       return;
     }
-    const encKey = "encoder.onnx";
-    const compKey = `compressor_${quality}.onnx`;
-    areCached([encKey, compKey]).then((results) => {
-      const enc = results[encKey];
-      const comp = results[compKey];
-      if (enc && comp) {
-        setCacheState("all");
-        setStatus("Cached models available");
-      } else if (enc || comp) {
-        setCacheState("partial");
-        setStatus(enc ? `${qualityLabel(quality)} compressor needs download` : "Encoder needs download");
-      } else {
-        setCacheState("none");
-        setStatus("");
-      }
-    });
-  }, [quality, modelsLoaded, loadedStatus]);
+    const enc = codecContext.cachedFiles.has(encoderFile());
+    const comp = codecContext.cachedFiles.has(compressorFile(quality));
+    if (codecContext.isCachedForRecording(quality)) {
+      setCacheState("all");
+      setStatus("Cached models available");
+    } else if (enc || comp) {
+      setCacheState("partial");
+      setStatus(enc ? `${qualityLabel(quality)} compressor needs download` : "Encoder needs download");
+    } else {
+      setCacheState("none");
+      setStatus("");
+    }
+  }, [quality, modelsLoaded, loadedStatus, codecContext.cachedFiles, codecContext.isCachedForRecording]);
 
   // Waveform drawing
   const drawWaveform = useCallback(() => {
@@ -237,30 +231,29 @@ export function useRecordFlow() {
   }, []);
 
   const handleLoadModels = useCallback(async () => {
-    try {
-      setStatusType("");
-      setStatus("Loading models...");
-      const loaded = await codecContext.loadModels(quality);
-      if (!loaded) {
-        setStatus("Download cancelled");
-        return;
+    setStatusType("");
+    setStatus("Loading models...");
+    const result = await codecContext.loadModels(quality, "record");
+    if (!result.ok) {
+      if (result.reason === "cancelled") setStatus("Download cancelled");
+      else if (result.reason === "error") {
+        setStatusType("err");
+        setStatus(result.message ?? codecContext.errorText);
       }
-
-      if (!micRef.current) {
-        setStatus("Requesting microphone...");
-        await ensureMicStream();
-      }
-      if (!actxRef.current || actxRef.current.state === "closed") {
-        actxRef.current = new AudioContext({ sampleRate: SR });
-        workletRegisteredRef.current = false;
-      }
-      setAudioReady(true);
-      setStatusType("ok");
-      setStatus(`${qualityLabel(quality)} loaded`);
-    } catch (e) {
-      setStatusType("err");
-      setStatus((e as Error).message);
+      return;
     }
+
+    if (!micRef.current) {
+      setStatus("Requesting microphone...");
+      await ensureMicStream();
+    }
+    if (!actxRef.current || actxRef.current.state === "closed") {
+      actxRef.current = new AudioContext({ sampleRate: SR });
+      workletRegisteredRef.current = false;
+    }
+    setAudioReady(true);
+    setStatusType("ok");
+    setStatus(`${qualityLabel(quality)} loaded`);
   }, [codecContext, quality, ensureMicStream]);
 
   const recDown = useCallback(

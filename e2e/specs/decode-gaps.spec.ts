@@ -8,7 +8,7 @@
  */
 import fs from "node:fs";
 import zlib from "node:zlib";
-import type { Locator, Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { test, expect } from "../support/test";
 import type { QrApp } from "../support/app";
 import { qrPng } from "../support/media";
@@ -49,16 +49,6 @@ async function saveHexFile(app: QrApp): Promise<{ name: string; buffer: Buffer }
   const path = await download.path();
   return { name: download.suggestedFilename(), buffer: fs.readFileSync(path!) };
 }
-
-/**
- * The record result's action row, addressed by position so a button can be
- * followed through a label change the page object does not know about
- * (Preview · Copy URL · Copy hex · Save hex · Download [· Hex]).
- */
-function actionButton(app: QrApp, index: number): Locator {
-  return app.copyHexButton.locator("xpath=..").getByRole("button").nth(index);
-}
-const COPY_URL_SLOT = 1;
 
 /** Make navigator.clipboard.writeText reject from now on. */
 async function breakClipboard(page: Page): Promise<void> {
@@ -238,7 +228,7 @@ test.describe("re-selecting the highlighted decoder", () => {
     await app.goto({ v: toBase64(bytes) });
     await app.downloadModelsButton.click();
     await expect(app.downloadModelsButton).toBeHidden({ timeout: 15_000 });
-    expect(models.requests).toHaveLength(3);
+    expect(models.requests).toHaveLength(1);
 
     await app.playButton.click();
     await expect(app.playButton).toHaveAttribute("aria-label", "Stop voice playback", { timeout: 15_000 });
@@ -296,11 +286,10 @@ test.describe("clipboard failures on the record result", () => {
     await expect(app.copyHexButton).toHaveText("Copy hex", { timeout: 3_000 });
     expect(pageErrors).toEqual([]);
 
-    const copyUrl = actionButton(app, COPY_URL_SLOT);
-    await expect(copyUrl).toHaveText("Copy URL");
-    await copyUrl.click();
-    await expect(copyUrl).toHaveText(/fail/i);
-    await expect(copyUrl).toHaveText("Copy URL", { timeout: 3_000 });
+    await expect(app.copyUrlButton).toHaveText("Copy URL");
+    await app.copyUrlButton.click();
+    await expect(app.copyUrlButton).toHaveText(/fail/i);
+    await expect(app.copyUrlButton).toHaveText("Copy URL", { timeout: 3_000 });
     expect(pageErrors).toEqual([]);
     await expect(app.copyUrlButton).not.toHaveText("Copied!");
   });
@@ -310,11 +299,10 @@ test.describe("clipboard failures on the record result", () => {
     await app.record(700);
     await breakClipboard(page);
 
-    const copyUrl = actionButton(app, COPY_URL_SLOT);
-    await expect(copyUrl).toHaveText("Copy URL");
-    await copyUrl.click();
-    await expect(copyUrl).toHaveText(/fail/i);
-    await expect(copyUrl).toHaveText("Copy URL", { timeout: 3_000 });
+    await expect(app.copyUrlButton).toHaveText("Copy URL");
+    await app.copyUrlButton.click();
+    await expect(app.copyUrlButton).toHaveText(/fail/i);
+    await expect(app.copyUrlButton).toHaveText("Copy URL", { timeout: 3_000 });
     expect(pageErrors).toEqual([]);
   });
 });

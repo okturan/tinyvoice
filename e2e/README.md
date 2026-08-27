@@ -49,7 +49,7 @@ Navigation: `goto({ v?, tab? })`, `presetEthos("stage-swap" | "split-deck")` (ca
 
 Decode sources: `openSource("hex" | "upload" | "camera")`, `submitHex(text)`, `hexTextarea`, `decodeHexButton`, `editHexButton`, `uploadFile(name, bytes, mime)`, `startCameraButton`, `stopCameraButton`, `sourceError` (panel-level red line), `hexInlineError` (HexInput's `role=alert`).
 
-Player: `playerCard`, `playButton` (aria-label `Play voice packet` / `Stop voice playback` / `Decoding voice packet`), `downloadModelsButton` (`Download 12.5hz models` / `Loading models...`), `playerStatus`, `playerHexButton`, `newSourceButton` (stage-swap only), `playerPlaceholder` (split-deck only).
+Player: `playerCard`, `playButton` (aria-label `Play voice packet` / `Stop voice playback` / `Decoding voice packet`), `downloadModelsButton` (`Download 12.5hz decoder (~141 MB)` / `Loading models...`), `playerStatus`, `playerHexButton`, `newSourceButton` (stage-swap only), `playerPlaceholder` (split-deck only). The Play button and that Download button fetch only the decoder (`decoder_<quality>.onnx`); Settings and PTT still fetch the encoder, compressor, and decoder.
 
 Decoder row (both tabs): `decoderRow`, `decoderButtons()`, `decoderButton(label)`, `decoderLabels()`, `selectedDecoderLabels()`, `expectDecoderSelected(label)`.
 
