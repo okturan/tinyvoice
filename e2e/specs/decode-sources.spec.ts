@@ -56,13 +56,39 @@ function hexLoaded(app: QrApp, bytes: Uint8Array) {
  * Wrap getUserMedia before the app boots so the transient "Requesting
  * camera..." state can be held open, or a permission failure simulated.
  */
-async function primeCamera(page: Page, opts: { delayMs?: number; rejectWith?: string }): Promise<void> {
+/**
+ * Wrap getUserMedia so a test can delay it, refuse it, or swap the fake
+ * camera for a featureless stream.
+ *
+ * `blank` matters for teardown assertions: Chromium's fake camera plays a
+ * frame with a real voice QR in it, so a working scanner stops the camera on
+ * its own within a tick or two. A test that wants to stop the camera itself
+ * would be racing that, so it asks for a stream with nothing to find.
+ */
+async function primeCamera(
+  page: Page,
+  opts: { delayMs?: number; rejectWith?: string; blank?: boolean },
+): Promise<void> {
   await page.addInitScript((o) => {
     const devices = navigator.mediaDevices;
     const real = devices.getUserMedia.bind(devices);
     devices.getUserMedia = async (constraints) => {
       if (o.delayMs) await new Promise((r) => setTimeout(r, o.delayMs));
       if (o.rejectWith) throw new DOMException(o.rejectWith, "NotAllowedError");
+      if (o.blank) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 480;
+        const context = canvas.getContext("2d")!;
+        const paint = () => {
+          context.fillStyle = "#808080";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+        };
+        paint();
+        // Keep frames flowing so the element reports a live video size.
+        setInterval(paint, 100);
+        return canvas.captureStream(10);
+      }
       return real(constraints);
     };
   }, opts);
@@ -501,7 +527,7 @@ test.describe("upload source", () => {
 
 test.describe("camera source", () => {
   test("Start asks for the camera, then mounts the viewfinder; Stop tears it down", async ({ app }) => {
-    await primeCamera(app.page, { delayMs: 1500 });
+    await primeCamera(app.page, { delayMs: 1500, blank: true });
     await app.goto({ tab: "decode" });
     await app.openSource("camera");
     await expect(app.startCameraButton).toBeVisible();
