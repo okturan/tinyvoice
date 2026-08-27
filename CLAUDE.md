@@ -63,6 +63,12 @@ worker/
 public/
   istft_window.json     — Precomputed Hann window (served as static asset)
   _redirects            — SPA routing for Cloudflare Pages
+
+e2e/
+  README.md             — Harness guide + page-object cheat-sheet
+  vite.e2e.config.ts    — Prod Vite config + alias that shrinks MODEL_ARTIFACT_BYTES to 1 MiB
+  support/              — ort-stub.js, model-server.ts, media.ts (fake mic WAV / camera Y4M), app.ts (page object), test.ts (fixtures), packets.ts (independent wire-format oracle)
+  specs/                — one spec per QR state area (decode sources/player/cross-quality, record flow/result, models lifecycle, layout & persistence)
 ```
 
 ## Key architecture decisions
@@ -99,7 +105,13 @@ npm run dev             # local dev server
 npm run dev              # Vite dev server (frontend)
 npx wrangler dev --config worker/wrangler.jsonc --port 8787
 npm test                 # unit + Cloudflare runtime integration tests
+npm run test:e2e         # Playwright browser suite for the QR page (see e2e/README.md)
 ```
+
+The e2e suite runs the real app in Chromium against a stubbed `window.ort`, a fake HuggingFace
+model server (1 MiB self-describing bodies), and Chromium's fake mic/camera. Tests marked
+`test.fail()` with a `// BUG:` comment document known defects and flip to "unexpected pass" once
+fixed — remove the annotation when you fix the bug.
 
 ## Known issues / tech debt
 

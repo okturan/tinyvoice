@@ -15,3 +15,7 @@ dist/
 *.png
 !docs/
 !docs/*.png
+e2e/.generated/
+e2e/.results/
+e2e/.build/
+playwright-report/

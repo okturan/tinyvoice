@@ -12,14 +12,17 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc -b && tsc -p worker/tsconfig.json && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -b && tsc -p worker/tsconfig.json && tsc -p tsconfig.test.json && tsc -p e2e/tsconfig.json",
     "worker:types": "wrangler types --config worker/wrangler.jsonc worker/worker-configuration.d.ts",
     "worker:types:check": "wrangler types --config worker/wrangler.jsonc worker/worker-configuration.d.ts --check",
     "worker:dry-run": "wrangler deploy --config worker/wrangler.jsonc --dry-run --outdir .wrangler-dist",
     "audit": "npm audit --audit-level=low",
     "social": "node scripts/gen-social.mjs",
     "deploy": "npm run build && cd dist && rm -f *.onnx && cd .. && wrangler pages deploy dist --project-name tinyvoice",
-    "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc"
+    "deploy:worker": "wrangler deploy --config worker/wrangler.jsonc",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "dev:e2e": "vite --config e2e/vite.e2e.config.ts --port 5174 --strictPort"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -36,6 +39,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.6",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.2",
     "@types/qrcode": "^1.5.5",
