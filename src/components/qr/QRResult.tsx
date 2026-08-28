@@ -61,7 +61,7 @@ export default function QRResult({
     : "Auto";
   const effectiveQuality = decoderOverride ?? parsedPacket?.quality ?? Quality.Hz12_5;
   const canPlay = codecContext.canPlay(effectiveQuality);
-  const decoderDownloadLabel = `Download ${qualityLabel(effectiveQuality)} decoder (~${MODEL_SIZE_ESTIMATES_MB[decoderFile(effectiveQuality)] ?? 0} MB)`;
+  const decoderDownloadNote = `First preview downloads the ${qualityLabel(effectiveQuality)} decoder (~${MODEL_SIZE_ESTIMATES_MB[decoderFile(effectiveQuality)] ?? 0} MB)`;
   const loadingDecoder = !canPlay && codecContext.state === "loading";
 
   const stopPlayback = useCallback(() => {
@@ -332,16 +332,6 @@ export default function QRResult({
           )}
         </Button>
 
-        {!canPlay && (
-          <Button
-            size="sm"
-            onClick={preview}
-            disabled={previewLoading || loadingDecoder}
-          >
-            {previewLoading || loadingDecoder ? "Loading..." : decoderDownloadLabel}
-          </Button>
-        )}
-
         <Button variant="outline" size="sm" onClick={copyUrl}>
           <CopyIcon size={12} />
           {urlCopyState === "copied"
@@ -377,6 +367,12 @@ export default function QRResult({
           </Button>
         )}
       </div>
+
+      {/* Recording no longer loads a decoder, so say what the first preview
+          costs — quietly. Preview itself fetches it. */}
+      {!canPlay && !previewLoading && !loadingDecoder && (
+        <p className="text-[0.65rem] text-[var(--overlay)]">{decoderDownloadNote}</p>
+      )}
 
       {showHexStream && (
         <HexStream

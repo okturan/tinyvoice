@@ -432,18 +432,20 @@ test.describe("preview decoder override", () => {
     await expect(app.downloadModelsButton).toHaveCount(0);
   });
 
-  test("previewing a recording whose decoder is absent offers a decoder download and plays after it", async ({ app, models }) => {
+  test("previewing a recording whose decoder is absent says what it costs, then plays", async ({ app, models }) => {
     await readyToRecord(app);
     await app.record(700);
-    const decoderButton = resultRoot(app).getByRole("button", {
-      name: "Download 12.5hz decoder (~141 MB)",
-    });
-    await expect(decoderButton).toBeVisible();
+
+    // One control, not two: Preview fetches the decoder itself, and the cost
+    // is stated in a caption rather than a second button competing with it.
+    const note = resultRoot(app).getByText("First preview downloads the 12.5hz decoder (~141 MB)");
+    await expect(note).toBeVisible();
+    await expect(resultRoot(app).getByRole("button", { name: /^Download .* decoder/ })).toHaveCount(0);
     expect(models.requests).not.toContain("decoder_12_5hz.onnx");
 
-    await decoderButton.click();
+    await app.previewButton.click();
     await expect(app.previewButton).toHaveText("Playing...", { timeout: 15_000 });
-    await expect(decoderButton).toHaveCount(0);
+    await expect(note).toHaveCount(0);
     expect(models.requests).toContain("decoder_12_5hz.onnx");
     expect((await app.ortState()).runs.map((r) => r.model)).toContain("decoder_12_5hz.onnx");
   });
